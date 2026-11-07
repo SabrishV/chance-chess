@@ -5,6 +5,11 @@ Play the computer, pass & play on one device, or play a friend online with a sha
 
 **Play free at [chance-chess-sab.vercel.app](https://chance-chess-sab.vercel.app/)**
 
+| | |
+| :---: | :---: |
+| ![Chance Chess home page with a fan of game cards](images/home.webp)<br>**Play the computer, a friend online, or pass & play** | ![A game against the computer with a Double Move card in play](images/game.webp)<br>**Draw a card, then play it** (with an optional chess clock) |
+| ![A Skip card stamped "Skipped!" over the board](images/cursed-card.webp)<br>**Cursed cards can cost you a turn** | ![Teleport portals showing every square a piece can jump to](images/teleport.webp)<br>**Teleport any piece to any empty square** |
+
 ## Rules
 
 Normal chess movement, plus:
