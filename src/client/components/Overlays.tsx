@@ -10,12 +10,14 @@ export interface Reveal {
   card: CardType;
   caption: string;
   note?: string;
+  /** How long the reveal stays up, in ms. */
+  duration: number;
 }
 
-/** A big card dealt over the board, used when a draw ends the turn on the spot. */
+/** A big card dealt face up over the board after every draw. */
 export function CardReveal({ reveal }: { reveal: Reveal }) {
   return (
-    <div className="reveal" key={reveal.id} aria-live="polite">
+    <div className="reveal" key={reveal.id} aria-live="polite" style={{ animationDuration: `${reveal.duration}ms` }}>
       <div className="reveal-caption">{reveal.caption}</div>
       <DealtCard card={reveal.card} size="xl" stamp />
       {reveal.note && <div className="reveal-note">{reveal.note}</div>}

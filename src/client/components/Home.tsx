@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { type Color, type GameRules, CARD_ORDER, DECK_COMPOSITION, DEFAULT_RULES } from '../../engine';
+import { type Color, type GameRules, type TimeControl, CARD_ORDER, DECK_COMPOSITION, DEFAULT_RULES } from '../../engine';
 import { DIFFICULTIES, type Difficulty } from '../../engine/ai';
 import { ROOM_CODE_PATTERN, type SeatChoice } from '../../shared/protocol';
 import { Card } from './Cards';
@@ -40,6 +40,13 @@ function Segmented<T extends string>({
   );
 }
 
+const CLOCKS: Record<string, { label: string; tc: TimeControl | null }> = {
+  off: { label: 'No clock', tc: null },
+  '3+2': { label: '3+2', tc: { initialMs: 3 * 60_000, incrementMs: 2_000 } },
+  '5+3': { label: '5+3', tc: { initialMs: 5 * 60_000, incrementMs: 3_000 } },
+  '10+5': { label: '10+5', tc: { initialMs: 10 * 60_000, incrementMs: 5_000 } },
+};
+
 const SEATS: [SeatChoice, string][] = [
   ['w', 'White'],
   ['random', 'Random'],
@@ -53,8 +60,9 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
   const [onlineSeat, setOnlineSeat] = useState<SeatChoice>('random');
   const [code, setCode] = useState('');
   const [checkEndsDouble, setCheckEndsDouble] = useState(DEFAULT_RULES.checkEndsDoubleMove);
+  const [clock, setClock] = useState('off');
 
-  const rules: GameRules = { checkEndsDoubleMove: checkEndsDouble };
+  const rules: GameRules = { checkEndsDoubleMove: checkEndsDouble, timeControl: CLOCKS[clock].tc };
   const cleanCode = code.trim().toUpperCase();
   const pickSeat = (s: SeatChoice): Color => (s === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : s);
   const deckSize = CARD_ORDER.reduce((n, c) => n + DECK_COMPOSITION[c], 0);
@@ -92,10 +100,21 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
       <section className="play" id="play" aria-labelledby="play-title">
         <div className="play-head">
           <h2 id="play-title">Choose how to play</h2>
-          <label className="name-field">
-            <span>Your name</span>
-            <input value={name} maxLength={20} placeholder="Player" onChange={(e) => onNameChange(e.target.value)} />
-          </label>
+          <div className="play-settings">
+            <label className="name-field">
+              <span>Your name</span>
+              <input value={name} maxLength={20} placeholder="Player" onChange={(e) => onNameChange(e.target.value)} />
+            </label>
+            <div className="name-field">
+              <span>Clock (minutes + seconds per turn)</span>
+              <Segmented
+                label="Clock"
+                value={clock}
+                onChange={setClock}
+                options={Object.entries(CLOCKS).map(([k, v]) => [k, v.label])}
+              />
+            </div>
+          </div>
         </div>
         <div className="modes">
           <article className="mode mode-ai">

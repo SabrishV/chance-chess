@@ -23,6 +23,10 @@ Normal chess movement, plus:
 
 Draws: 200 turns in total, or only the kings left.
 
+**Clock (optional):** 3+2, 5+3 or 10+5 (minutes each, plus seconds added after every turn). Run out of time and you lose. Online, the server keeps the clocks, so a player who stops responding still loses on time.
+
+**Chat:** in online games, players can message each other; messages appear in the move list between the turns they were sent in.
+
 ## Development
 
 ```bash

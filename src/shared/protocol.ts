@@ -15,7 +15,20 @@ export type ClientMessage =
   /** `seat` and `rules` only matter for whoever opens a new room. */
   | { type: 'join'; token: string; name: string; seat?: SeatChoice; rules?: Partial<GameRules> }
   | { type: 'action'; action: Action }
-  | { type: 'rematch' };
+  | { type: 'rematch' }
+  | { type: 'chat'; text: string };
+
+export const CHAT_MAX_LENGTH = 200;
+
+export interface ChatMessage {
+  id: number;
+  color: Color;
+  name: string;
+  text: string;
+  /** Which game in this room (rematches count up), and how many turns had been logged when sent. */
+  game: number;
+  logLength: number;
+}
 
 export interface PlayerInfo {
   name: string;
@@ -30,7 +43,12 @@ export type ServerMessage =
       view: GameView;
       players: Record<Color, PlayerInfo | null>;
       rematch: Color[];
+      game: number;
+      /** Server's Date.now(), so clients can line up the chess clocks. */
+      serverNow: number;
     }
+  /** Chat history on join (`replace`), then each new message. */
+  | { type: 'chat'; messages: ChatMessage[]; replace: boolean }
   | { type: 'error'; message: string };
 
 export function randomRoomCode(): string {

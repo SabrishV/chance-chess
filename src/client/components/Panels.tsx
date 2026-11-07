@@ -1,3 +1,4 @@
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   CARD_ORDER,
   CARDS,
@@ -8,8 +9,9 @@ import {
   type PieceType,
   droppable,
 } from '../../engine';
-import type { PlayerInfo } from '../../shared/protocol';
+import { CHAT_MAX_LENGTH, type ChatMessage, type PlayerInfo } from '../../shared/protocol';
 import { Card, CardChip, DealtCard, Deck } from './Cards';
+import { ClockDisplay } from './Clock';
 import { COLOR_NAME, PieceImg } from './Piece';
 
 const PIECE_ORDER: PieceType[] = ['q', 'r', 'b', 'n', 'p'];
@@ -24,11 +26,18 @@ export function PlayerBar({
   view,
   player,
   isYou,
+  clockOffset,
+  bubble,
+  bubbleBelow,
 }: {
   color: Color;
   view: GameView;
   player: PlayerInfo | null;
   isYou: boolean;
+  clockOffset: number;
+  /** A chat message to show as a speech bubble. */
+  bubble?: { id: number; text: string };
+  bubbleBelow?: boolean;
 }) {
   const active = view.phase !== 'over' && view.pos.turn === color;
   const captured = sortPieces(view.inventory[color]);
@@ -53,6 +62,12 @@ export function PlayerBar({
           <PieceImg key={i} piece={{ type: t, color: enemy }} className="tray-piece" />
         ))}
       </div>
+      <ClockDisplay view={view} color={color} offset={clockOffset} />
+      {bubble && (
+        <div key={bubble.id} className={`speech ${bubbleBelow ? 'below' : 'above'}`} role="status">
+          {bubble.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -93,18 +108,16 @@ export function CardZone(props: CardZoneProps) {
   const color = view.pos.turn;
   const dealKey = view.log.length;
 
+  // The big deck to draw from sits on the board; this is the reminder beside it.
   if (myTurn && view.phase === 'draw') {
     return (
-      <div className="card-zone is-draw">
-        <button className="deck-button" onClick={onDraw} type="button" disabled={!canAct} aria-label="Draw a card">
-          <Deck count={deckSize(view, color)} size="lg" />
+      <div className="card-zone is-waiting">
+        <button className="deck-button small" onClick={onDraw} type="button" disabled={!canAct} aria-label="Draw a card">
+          <Deck count={deckSize(view, color)} size="md" />
         </button>
         <div className="zone-copy">
           <div className="zone-title">Draw a card!</div>
-          <p className="zone-hint">Tap the deck or press Space.</p>
-          <button className="btn btn-primary btn-pulse" onClick={onDraw} type="button" disabled={!canAct}>
-            Draw
-          </button>
+          <p className="zone-hint">Tap the deck on the board, or press Space.</p>
         </div>
       </div>
     );
@@ -175,12 +188,76 @@ export function CardZone(props: CardZoneProps) {
   );
 }
 
-export function GameLog({ view, names }: { view: GameView; names: Record<Color, string> }) {
-  if (view.log.length === 0) return <p className="muted small">No moves yet. Draw a card to begin!</p>;
-  return (
-    <ol className="log">
-      {[...view.log].reverse().map((entry) => (
-        <li key={entry.turn}>
+type TimelineItem = { kind: 'turn'; index: number } | { kind: 'chat'; message: ChatMessage };
+
+const QUICK_CHAT = ['gg', 'Nice!', 'Oops 😅', 'Lucky!'];
+
+/** Moves and (online) chat in one running list, oldest first. */
+export function Timeline({
+  view,
+  names,
+  chat,
+  game,
+  myColors,
+  onSend,
+}: {
+  view: GameView;
+  names: Record<Color, string>;
+  chat: ChatMessage[] | null;
+  game: number;
+  myColors: Color[];
+  onSend: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const listRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+
+  // Chat is placed after the turn that was last logged when it was sent.
+  const items: TimelineItem[] = [];
+  const messages = chat ?? [];
+  for (const m of messages) if (m.game < game) items.push({ kind: 'chat', message: m });
+  view.log.forEach((_, index) => {
+    for (const m of messages) if (m.game === game && m.logLength === index) items.push({ kind: 'chat', message: m });
+    items.push({ kind: 'turn', index });
+  });
+  for (const m of messages) if (m.game === game && m.logLength >= view.log.length) items.push({ kind: 'chat', message: m });
+
+  const lastKey = `${view.log.length}:${view.log.at(-1)?.actions.length}:${messages.length}`;
+  useEffect(() => {
+    const el = listRef.current;
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [lastKey]);
+
+  const send = (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    onSend(t);
+    stickToBottom.current = true;
+  };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    send(draft);
+    setDraft('');
+  };
+
+  let content: ReactNode;
+  if (items.length === 0) {
+    content = <p className="muted small timeline-empty">{chat ? 'No moves yet. Say hi!' : 'No moves yet. Draw a card to begin!'}</p>;
+  } else {
+    content = items.map((item) => {
+      if (item.kind === 'chat') {
+        const m = item.message;
+        const mine = myColors.includes(m.color);
+        return (
+          <div key={`c${m.id}`} className={`chat-row ${mine ? 'mine' : 'theirs'}`}>
+            {!mine && <span className="chat-name">{m.name}</span>}
+            <span className="chat-bubble">{m.text}</span>
+          </div>
+        );
+      }
+      const entry = view.log[item.index];
+      return (
+        <div key={`t${item.index}`} className="log-row">
           <span className="log-turn">{entry.turn}</span>
           <span className={`side-dot side-${entry.color}`} title={names[entry.color]} />
           <CardChip card={entry.card} />
@@ -188,9 +265,47 @@ export function GameLog({ view, names }: { view: GameView; names: Record<Color, 
             {entry.actions.join(', ')}
             {entry.note && <em> {entry.note}</em>}
           </span>
-        </li>
-      ))}
-    </ol>
+        </div>
+      );
+    });
+  }
+
+  return (
+    <div className="timeline-wrap">
+      <div
+        className="timeline"
+        ref={listRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+      >
+        {content}
+      </div>
+      {chat && myColors.length > 0 && (
+        <>
+          <div className="quick-chat">
+            {QUICK_CHAT.map((q) => (
+              <button key={q} type="button" className="chip-btn" onClick={() => send(q)}>
+                {q}
+              </button>
+            ))}
+          </div>
+          <form className="chat-form" onSubmit={submit}>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              maxLength={CHAT_MAX_LENGTH}
+              placeholder="Message your opponent…"
+              aria-label="Chat message"
+            />
+            <button className="btn btn-primary" type="submit" disabled={!draft.trim()}>
+              Send
+            </button>
+          </form>
+        </>
+      )}
+    </div>
   );
 }
 

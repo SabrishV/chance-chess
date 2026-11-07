@@ -8,6 +8,7 @@ import {
   type Position,
   applyAction,
   applyMove,
+  checkTimeout,
   findKing,
   generateMoves,
   isAttacked,
@@ -16,6 +17,8 @@ import {
   opposite,
   parseSquare as sq,
   positionFromFen,
+  startClock,
+  timeLeft,
   toView,
 } from '../src/engine';
 import { chooseAction } from '../src/engine/ai';
@@ -264,6 +267,63 @@ describe('cards', () => {
     const view = toView(newGame());
     expect('decks' in view).toBe(false);
     expect(view.deckCounts.w).toEqual({ move: 20, double: 5, skip: 4, undo: 3, wild: 5, teleport: 3 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Clock
+
+describe('clock', () => {
+  const blitz = { checkEndsDoubleMove: true, timeControl: { initialMs: 60_000, incrementMs: 2_000 } };
+  const clocked = (cards: CardType[]) => {
+    const g = newGame(Math.random, blitz);
+    g.decks.w = [...cards].reverse();
+    g.decks.b = Array(10).fill('move');
+    return startClock(g, 0);
+  };
+  const at = (s: GameState, color: Color, action: Action, now: number) => {
+    const r = applyAction(s, action, color, Math.random, now);
+    if (!r.ok) throw new Error(r.error);
+    return r.state;
+  };
+
+  it('has no clock unless a time control is chosen', () => {
+    expect(newGame().clock).toBeNull();
+    expect(timeLeft(newGame(), 'w', 1e12)).toBe(Infinity);
+  });
+
+  it("runs only the side to move's clock and adds the increment after each turn", () => {
+    let s = clocked(['move']);
+    s = at(s, 'w', draw, 5_000);
+    s = at(s, 'w', mv('e2', 'e4'), 12_000); // white used 12s, gets +2s
+    expect(s.clock!.remaining.w).toBe(50_000);
+    expect(timeLeft(s, 'w', 30_000)).toBe(50_000); // white's clock is stopped
+    expect(timeLeft(s, 'b', 30_000)).toBe(42_000); // black's has run 18s
+  });
+
+  it('a turn that ends on the spot (Skip) still adds the increment', () => {
+    const s = at(clocked(['skip']), 'w', draw, 3_000);
+    expect(s.clock!.remaining.w).toBe(59_000);
+    expect(s.clock!.runningSince).toBe(3_000);
+  });
+
+  it('flags the side to move when time runs out', () => {
+    const s = clocked(['move']);
+    expect(checkTimeout(s, 59_999)).toBeNull();
+    const over = checkTimeout(s, 60_000)!;
+    expect(over.result).toEqual({ winner: 'b', reason: 'timeout' });
+    expect(over.clock!.runningSince).toBeNull();
+  });
+
+  it('an action sent after the flag fell loses on time', () => {
+    const r = applyAction(clocked(['move']), draw, 'w', Math.random, 61_000);
+    expect(r.ok && r.state.result).toEqual({ winner: 'b', reason: 'timeout' });
+  });
+
+  it('stops the clock when the game ends', () => {
+    const s = at(clocked(['move']), 'b', { kind: 'resign' }, 10_000);
+    expect(s.clock!.runningSince).toBeNull();
+    expect(timeLeft(s, 'w', 999_999)).toBe(50_000);
   });
 });
 

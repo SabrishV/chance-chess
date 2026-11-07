@@ -13,8 +13,9 @@ import {
 import type { GameController } from '../controllers';
 import { loadValue, saveValue } from '../storage';
 import { Board, type TargetKind } from './Board';
+import { Deck } from './Cards';
 import { Banner, CardReveal, GameOverModal, PromotionPicker, type Reveal } from './Overlays';
-import { CardCounter, CardZone, GameLog, PlayerBar } from './Panels';
+import { CardCounter, CardZone, PlayerBar, Timeline } from './Panels';
 import { COLOR_NAME } from './Piece';
 
 const NO_ACTIONS: LegalActions = { moves: [], drops: [], teleports: [], canEndTurn: false };
@@ -41,6 +42,9 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
   const [banner, setBanner] = useState<{ id: number; text: string; tone: 'danger' | 'info' } | null>(null);
   const [resultDismissed, setResultDismissed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [bubbles, setBubbles] = useState<Partial<Record<Color, { id: number; text: string }>>>({});
+  const [timelineOpen, setTimelineOpen] = useState(true);
+  const [unread, setUnread] = useState(0);
 
   const names: Record<Color, string> = {
     w: players.w?.name ?? COLOR_NAME.w,
@@ -67,7 +71,8 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
   if (view && firstSeq.current === null) firstSeq.current = view.seq;
   const animKey = view && view.seq !== firstSeq.current ? view.seq : 0;
 
-  // Dramatic reveals for cards that end the turn on the spot, and a banner for check.
+  // Every draw is dealt face up over the board; cards that end the turn on the
+  // spot (Skip, Undo) stay longer. Check gets a banner.
   const seenLog = useRef<{ length: number; note?: string } | null>(null);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
@@ -79,15 +84,41 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
     if (!prev || !last || (prev.length === view.log.length && prev.note === last.note)) return;
 
     const newDraw = view.log.length > prev.length;
-    if (newDraw && (last.card === 'skip' || last.card === 'undo' || last.note === 'No legal moves.')) {
-      const you = myColors.length === 1 && myColors[0] === last.color;
-      setReveal({ id: Date.now(), card: last.card, caption: you ? 'You drew' : `${names[last.color]} drew`, note: last.note });
-      timers.current.push(window.setTimeout(() => setReveal(null), 2600));
+    if (newDraw) {
+      const mine = myColors.includes(last.color);
+      const you = mine && myColors.length === 1;
+      const endsTurn = last.card === 'skip' || last.card === 'undo' || last.note === 'No legal moves.';
+      const duration = endsTurn ? 2600 : mine ? 1300 : 1700;
+      setReveal({
+        id: Date.now(),
+        card: last.card,
+        caption: you ? 'You drew' : `${names[last.color]} drew`,
+        note: last.note,
+        duration,
+      });
+      timers.current.push(window.setTimeout(() => setReveal(null), duration));
     } else if (last.note?.startsWith('Check')) {
       setBanner({ id: Date.now(), text: 'Check! Double move ends', tone: 'danger' });
       timers.current.push(window.setTimeout(() => setBanner(null), 1700));
     }
   }, [view, myColors, names.w, names.b]);
+
+  // New chat messages pop up as speech bubbles, and count as unread while the panel is shut.
+  const seenChat = useRef<number | null>(null);
+  useEffect(() => {
+    const chat = game.chat;
+    if (!chat) return;
+    const prevCount = seenChat.current;
+    seenChat.current = chat.length;
+    if (prevCount === null || chat.length <= prevCount) return;
+    for (const m of chat.slice(prevCount)) {
+      setBubbles((b) => ({ ...b, [m.color]: { id: m.id, text: m.text } }));
+      timers.current.push(
+        window.setTimeout(() => setBubbles((b) => (b[m.color]?.id === m.id ? { ...b, [m.color]: undefined } : b)), 4000),
+      );
+      if (!myColors.includes(m.color) && !timelineOpen) setUnread((n) => n + 1);
+    }
+  }, [game.chat, myColors, timelineOpen]);
 
   // Space bar draws a card.
   useEffect(() => {
@@ -239,7 +270,15 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
 
       <main className="game-layout">
         <section className="board-area" aria-label="Board">
-          <PlayerBar color={top} view={view} player={players[top]} isYou={me === top} />
+          <PlayerBar
+            color={top}
+            view={view}
+            player={players[top]}
+            isYou={me === top}
+            clockOffset={game.clockOffset}
+            bubble={bubbles[top]}
+            bubbleBelow
+          />
           <div className={`board-frame theme-${theme}`}>
             <Board
               board={board}
@@ -253,6 +292,14 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
               animKey={animKey}
               onSquareClick={onSquareClick}
             />
+            {canAct && view.phase === 'draw' && !reveal && (
+              <button className="draw-overlay" type="button" onClick={() => game.send({ kind: 'draw' })} aria-label="Draw a card">
+                <span className="draw-deck">
+                  <Deck count={Object.values(view.deckCounts[view.pos.turn]).reduce((a, b) => a + b, 0)} size="lg" />
+                </span>
+                <span className="draw-cta">Tap to draw</span>
+              </button>
+            )}
             {promotion && (
               <PromotionPicker color={view.pos.turn} onPick={(t) => game.send({ kind: 'move', ...promotion, promotion: t })} />
             )}
@@ -271,7 +318,14 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
               />
             )}
           </div>
-          <PlayerBar color={orientation} view={view} player={players[orientation]} isYou={me === orientation} />
+          <PlayerBar
+            color={orientation}
+            view={view}
+            player={players[orientation]}
+            isYou={me === orientation}
+            clockOffset={game.clockOffset}
+            bubble={bubbles[orientation]}
+          />
         </section>
 
         <aside className="side-area">
@@ -326,9 +380,22 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
             />
           )}
 
-          <details className="panel" open>
-            <summary>Moves</summary>
-            <GameLog view={view} names={names} />
+          <details
+            className="panel"
+            open={timelineOpen}
+            onToggle={(e) => {
+              const open = e.currentTarget.open;
+              setTimelineOpen(open);
+              if (open) setUnread(0);
+            }}
+          >
+            <summary>
+              <span>
+                {game.chat ? 'Moves & chat' : 'Moves'}
+                {unread > 0 && <span className="unread">{unread}</span>}
+              </span>
+            </summary>
+            <Timeline view={view} names={names} chat={game.chat} game={game.game} myColors={myColors} onSend={game.sendChat} />
           </details>
           <details className="panel">
             <summary>Card counter</summary>

@@ -10,12 +10,21 @@ import {
   type GameState,
   type GameView,
   applyAction,
+  checkTimeout,
   newGame,
   opposite,
+  startClock,
   toView,
 } from '../engine';
 import { DIFFICULTIES, type Difficulty } from '../engine/ai';
-import { type ClientMessage, type PlayerInfo, type SeatChoice, type ServerMessage, PARTY } from '../shared/protocol';
+import {
+  type ChatMessage,
+  type ClientMessage,
+  type PlayerInfo,
+  type SeatChoice,
+  type ServerMessage,
+  PARTY,
+} from '../shared/protocol';
 import type { AiRequest, AiResponse } from './ai.worker';
 import { playerToken } from './storage';
 
@@ -31,7 +40,14 @@ export interface GameController {
   online: boolean;
   error: string | null;
   rematchRequested: Color[];
+  /** Add to Date.now() to get the clock time the game state uses (server time online). */
+  clockOffset: number;
+  /** Which game in this room (online rematches count up). */
+  game: number;
+  /** Chat history, or null where there is no one to chat with. */
+  chat: ChatMessage[] | null;
   send(action: Action): void;
+  sendChat(text: string): void;
   rematch(): void;
 }
 
@@ -58,12 +74,18 @@ export interface LocalOptions {
   playerName: string;
 }
 
-/** Minimum time the computer takes per step, so people can follow its cards. */
-const AI_DRAW_DELAY_MS = 700;
-const AI_MOVE_DELAY_MS = 1200;
+/**
+ * Minimum time the computer takes per step, so people can follow it: your last
+ * move finishes animating before it draws, and its card reveal finishes before it moves.
+ */
+const AI_DRAW_DELAY_MS = 1000;
+const AI_FIRST_MOVE_DELAY_MS = 1900;
+const AI_NEXT_MOVE_DELAY_MS = 1200;
+
+const freshGame = (rules: GameRules) => startClock(newGame(Math.random, rules), Date.now());
 
 export function useLocalGame(opts: LocalOptions): GameController {
-  const [state, setState] = useState<GameState>(() => newGame(Math.random, opts.rules));
+  const [state, setState] = useState<GameState>(() => freshGame(opts.rules));
   const [human, setHuman] = useState(opts.humanColor);
   const [thinking, setThinking] = useState(false);
   const [error, flashError] = useFlashError();
@@ -90,7 +112,8 @@ export function useLocalGame(opts: LocalOptions): GameController {
 
     const id = ++requestId.current;
     const started = Date.now();
-    const minDelay = state.phase === 'draw' ? AI_DRAW_DELAY_MS : AI_MOVE_DELAY_MS;
+    const minDelay =
+      state.phase === 'draw' ? AI_DRAW_DELAY_MS : state.movesMade === 0 ? AI_FIRST_MOVE_DELAY_MS : AI_NEXT_MOVE_DELAY_MS;
     let timer: number | undefined;
     setThinking(true);
 
@@ -116,6 +139,15 @@ export function useLocalGame(opts: LocalOptions): GameController {
     };
   }, [state, aiColor, opts.difficulty]);
 
+  // Flag the side to move the moment their time runs out.
+  useEffect(() => {
+    const clock = state.clock;
+    if (!clock || clock.runningSince === null || state.phase === 'over') return;
+    const msLeft = clock.runningSince + clock.remaining[state.pos.turn] - Date.now();
+    const timer = window.setTimeout(() => setState((s) => checkTimeout(s, Date.now()) ?? s), Math.max(0, msLeft) + 20);
+    return () => clearTimeout(timer);
+  }, [state]);
+
   const send = useCallback(
     (action: Action) => {
       const actor = opts.mode === 'local' ? state.pos.turn : human;
@@ -127,7 +159,7 @@ export function useLocalGame(opts: LocalOptions): GameController {
   );
 
   const rematch = useCallback(() => {
-    setState(newGame(Math.random, opts.rules));
+    setState(freshGame(opts.rules));
     if (opts.mode === 'ai') setHuman((c) => opposite(c));
   }, [opts.mode, opts.rules]);
 
@@ -148,7 +180,11 @@ export function useLocalGame(opts: LocalOptions): GameController {
     online: true,
     error,
     rematchRequested: [],
+    clockOffset: 0,
+    game: 1,
+    chat: null,
     send,
+    sendChat: () => {},
     rematch,
   };
 }
@@ -170,6 +206,9 @@ export function useOnlineGame(opts: OnlineOptions): GameController {
   const [rematchRequested, setRematchRequested] = useState<Color[]>([]);
   const [myColor, setMyColor] = useState<Color | null>(null);
   const [online, setOnline] = useState(false);
+  const [clockOffset, setClockOffset] = useState(0);
+  const [game, setGame] = useState(1);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
   const [error, flashError] = useFlashError();
   const socketRef = useRef<PartySocket | null>(null);
   const joinRef = useRef(opts);
@@ -199,6 +238,10 @@ export function useOnlineGame(opts: OnlineOptions): GameController {
         setView(msg.view);
         setPlayers(msg.players);
         setRematchRequested(msg.rematch);
+        setGame(msg.game);
+        setClockOffset(msg.serverNow - Date.now());
+      } else if (msg.type === 'chat') {
+        setChat((prev) => (msg.replace ? msg.messages : [...prev, ...msg.messages]));
       } else if (msg.type === 'error') flashError(msg.message);
     });
 
@@ -219,7 +262,11 @@ export function useOnlineGame(opts: OnlineOptions): GameController {
     online,
     error,
     rematchRequested,
+    clockOffset,
+    game,
+    chat,
     send: useCallback((action: Action) => sendMessage({ type: 'action', action }), [sendMessage]),
+    sendChat: useCallback((text: string) => sendMessage({ type: 'chat', text }), [sendMessage]),
     rematch: useCallback(() => sendMessage({ type: 'rematch' }), [sendMessage]),
   };
 }

@@ -59,7 +59,7 @@ export interface TurnLog {
   note?: string;
 }
 
-export type ResultReason = 'king-captured' | 'resigned' | 'turn-limit' | 'insufficient-material';
+export type ResultReason = 'king-captured' | 'resigned' | 'timeout' | 'turn-limit' | 'insufficient-material';
 
 export interface GameResult {
   /** null means a draw. */
@@ -88,9 +88,26 @@ export interface GameRules {
    * (Borrowed from Marseillais double-move chess.)
    */
   checkEndsDoubleMove: boolean;
+  /** Chess clock; null plays without one. */
+  timeControl: TimeControl | null;
 }
 
-export const DEFAULT_RULES: GameRules = { checkEndsDoubleMove: true };
+export interface TimeControl {
+  initialMs: number;
+  /** Added to a player's clock after each of their turns. */
+  incrementMs: number;
+}
+
+export const DEFAULT_RULES: GameRules = { checkEndsDoubleMove: true, timeControl: null };
+
+/**
+ * Each side's remaining time. The side to move's clock has been running since
+ * `runningSince` (a Date.now() timestamp); null means stopped.
+ */
+export interface Clock {
+  remaining: Record<Color, number>;
+  runningSince: number | null;
+}
 
 export interface GameState {
   rules: GameRules;
@@ -113,6 +130,8 @@ export interface GameState {
   events: BoardEvent[];
   /** Increases with every action, so clients can tell new events from old. */
   seq: number;
+  /** null when playing without a clock. */
+  clock: Clock | null;
   result: GameResult | null;
 }
 
@@ -142,8 +161,38 @@ export function newGame(rng: Rng = Math.random, rules: GameRules = DEFAULT_RULES
     highlight: [],
     events: [],
     seq: 0,
+    clock: rules.timeControl
+      ? { remaining: { w: rules.timeControl.initialMs, b: rules.timeControl.initialMs }, runningSince: null }
+      : null,
     result: null,
   };
+}
+
+/** Start the clock (for the side to move). Call when both players are ready. */
+export function startClock(state: GameState, now: number): GameState {
+  if (!state.clock || state.clock.runningSince !== null || state.phase === 'over') return state;
+  return { ...state, clock: { ...state.clock, runningSince: now } };
+}
+
+/** Time `color` has left at `now`, counting the clock that is currently running. */
+export function timeLeft(state: Pick<GameState, 'clock' | 'pos'>, color: Color, now: number): number {
+  const clock = state.clock;
+  if (!clock) return Infinity;
+  const running = clock.runningSince !== null && state.pos.turn === color;
+  return Math.max(0, clock.remaining[color] - (running ? now - clock.runningSince! : 0));
+}
+
+/** If the side to move has run out of time, return the finished game; otherwise null. */
+export function checkTimeout(state: GameState, now: number): GameState | null {
+  if (state.phase === 'over' || state.clock?.runningSince == null) return null;
+  const color = state.pos.turn;
+  if (timeLeft(state, color, now) > 0) return null;
+  const s = structuredClone(state);
+  s.clock!.remaining[color] = 0;
+  s.events = [];
+  s.seq++;
+  finish(s, { winner: opposite(color), reason: 'timeout' });
+  return s;
 }
 
 export function toView(state: GameState): GameView {
@@ -213,16 +262,24 @@ export function applyAction(
   action: Action,
   actor: Color,
   rng: Rng = Math.random,
+  now: number = Date.now(),
 ): ActionResult {
   if (state.phase === 'over') return fail('The game is over.');
+
+  // An action that arrives after the flag has fallen loses on time instead.
+  const timedOut = checkTimeout(state, now);
+  if (timedOut) return { ok: true, state: timedOut };
 
   const s = structuredClone(state);
   s.events = [];
   s.seq++;
+  if (s.clock?.runningSince != null) {
+    s.clock.remaining[s.pos.turn] -= now - s.clock.runningSince;
+    s.clock.runningSince = now;
+  }
 
   if (action.kind === 'resign') {
-    s.phase = 'over';
-    s.result = { winner: opposite(actor), reason: 'resigned' };
+    finish(s, { winner: opposite(actor), reason: 'resigned' });
     return { ok: true, state: s };
   }
 
@@ -338,8 +395,7 @@ function doMove(s: GameState, action: Extract<Action, { kind: 'move' }>): Action
   };
 
   if (r.captured?.type === 'k') {
-    s.phase = 'over';
-    s.result = { winner: color, reason: 'king-captured' };
+    finish(s, { winner: color, reason: 'king-captured' });
   } else if (r.captured) {
     s.inventory[color].push(r.captured.type);
   }
@@ -405,10 +461,17 @@ function finishAction(s: GameState, text: string, squares: Square[]): void {
   }
 }
 
+function finish(s: GameState, result: GameResult): void {
+  s.phase = 'over';
+  s.result = result;
+  if (s.clock) s.clock.runningSince = null;
+}
+
 function endTurn(s: GameState): void {
   const color = s.pos.turn;
   // An opponent's en passant chance lasts only for the turn right after it.
   if (s.pos.ep && s.pos.ep.by !== color) s.pos.ep = null;
+  if (s.clock && s.rules.timeControl) s.clock.remaining[color] += s.rules.timeControl.incrementMs;
 
   s.pos.turn = opposite(color);
   s.phase = 'draw';
@@ -419,11 +482,9 @@ function endTurn(s: GameState): void {
 
   const onlyKings = s.pos.board.every((p) => !p || p.type === 'k');
   if (onlyKings) {
-    s.phase = 'over';
-    s.result = { winner: null, reason: 'insufficient-material' };
+    finish(s, { winner: null, reason: 'insufficient-material' });
   } else if (s.turnNumber > MAX_TURNS) {
-    s.phase = 'over';
-    s.result = { winner: null, reason: 'turn-limit' };
+    finish(s, { winner: null, reason: 'turn-limit' });
   }
 }
 
@@ -495,8 +556,9 @@ export function describeResult(result: GameResult, names: Record<Color, string>)
       : 'Draw: only the kings are left.';
   }
   const winner = names[result.winner];
-  return result.reason === 'resigned'
-    ? `${winner} wins: ${names[opposite(result.winner)]} resigned.`
-    : `${winner} wins by capturing the king!`;
+  const loser = names[opposite(result.winner)];
+  if (result.reason === 'resigned') return `${winner} wins: ${loser} resigned.`;
+  if (result.reason === 'timeout') return `${winner} wins on time: ${loser} ran out.`;
+  return `${winner} wins by capturing the king!`;
 }
 
