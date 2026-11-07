@@ -3,13 +3,16 @@
 // then writes robots.txt and (when SITE_URL is set) sitemap.xml and absolute URLs.
 //
 //   SITE_URL=https://chance-chess.example.com npm run build
+//
+// On Vercel, SITE_URL defaults to the project's production address.
 
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import react from '@vitejs/plugin-react';
 import { createServer } from 'vite';
 
 const DIST = 'dist/client';
-const SITE_URL = (process.env.SITE_URL ?? '').replace(/\/+$/, '');
+const vercelUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+const SITE_URL = (process.env.SITE_URL || (vercelUrl ? `https://${vercelUrl}` : '')).replace(/\/+$/, '');
 
 // JSON inside <script> must not be able to close the tag.
 const jsonForScript = (value) => JSON.stringify(value).replace(/</g, '\\u003c');

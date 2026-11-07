@@ -27,7 +27,8 @@
     "src",
     "tests",
     "vite.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vite.site.config.ts"
   ],
   "exclude": [
     "src/server"

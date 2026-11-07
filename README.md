@@ -44,7 +44,40 @@ To try online play locally, create a game and open the invite link in a second t
 
 - The home page (hero, how to play, card gallery, FAQ) is pre-rendered into `index.html` at build time by `scripts/prerender.mjs`, so crawlers and link previews get real content. The app then takes over in the browser.
 - `index.html` has the title, description, Open Graph / Twitter tags and `VideoGame` structured data; the build adds `FAQPage` structured data from `src/client/content.ts`.
-- Set `SITE_URL` when building for your real domain to add the canonical URL, absolute image URLs and `sitemap.xml` (a `robots.txt` is always written):
+- On Vercel, the canonical URL, absolute image URLs and `sitemap.xml` use the project's production address automatically. Elsewhere, or for a custom domain, set `SITE_URL` when building (a `robots.txt` is always written):
+
+  ```bash
+  SITE_URL=https://your-domain.example npm run deploy
+  ```
+
+- Icons and the link-preview image (`public/*.png`) are rendered from `scripts/brand/` with `scripts/render-brand.sh` (needs Chromium or Chrome).
+
+## Deploying
+
+The project is hosted in two free pieces:
+
+- **Game rooms** run on Cloudflare Workers with Durable Objects, via [PartyServer](https://github.com/cloudflare/partykit/tree/main/packages/partyserver) (the successor to PartyKit). Each online room is a Durable Object that Cloudflare runs on demand.
+- **The website** runs on Vercel, at a short `*.vercel.app` address. It's built by `npm run build:site` (see `vercel.json`) and connects to the game rooms on Cloudflare.
+
+Cloudflare (game rooms):
+
+```bash
+npx wrangler login   # one time, needs a free Cloudflare account
+npm run deploy       # prints https://chance-chess.<your-subdomain>.workers.dev
+```
+
+Vercel (website): import the GitHub repo as a new project, then add the environment variable
+`VITE_GAME_SERVER` = `chance-chess.<your-subdomain>.workers.dev` (no `https://`). Every push to `main` redeploys the site.
+
+Keep the two in step: after changing anything in `src/engine`, `src/shared` or `src/server`, run `npm run deploy` again so the rooms run the same rules as the website.
+
+The Cloudflare Worker also serves the site itself, so Cloudflare-only hosting still works: just leave `VITE_GAME_SERVER` unset.
+
+## SEO
+
+- The home page (hero, how to play, card gallery, FAQ) is pre-rendered into `index.html` at build time by `scripts/prerender.mjs`, so crawlers and link previews get real content. The app then takes over in the browser.
+- `index.html` has the title, description, Open Graph / Twitter tags and `VideoGame` structured data; the build adds `FAQPage` structured data from `src/client/content.ts`.
+- On Vercel, the canonical URL, absolute image URLs and `sitemap.xml` use the project's production address automatically. Elsewhere, or for a custom domain, set `SITE_URL` when building (a `robots.txt` is always written):
 
   ```bash
   SITE_URL=https://your-domain.example npm run deploy

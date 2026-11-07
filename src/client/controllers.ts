@@ -192,6 +192,19 @@ export function useLocalGame(opts: LocalOptions): GameController {
 // ---------------------------------------------------------------------------
 // Online games through the GameRoom Durable Object.
 
+/**
+ * Where online game rooms live. Unset means this same site (Cloudflare-only
+ * hosting, and local dev). When the site is hosted elsewhere (e.g. Vercel),
+ * set VITE_GAME_SERVER at build time to the Cloudflare Worker's host, like
+ * "chance-chess.example.workers.dev".
+ */
+function gameServer(): { host: string; protocol: 'ws' | 'wss' } {
+  const configured = import.meta.env.VITE_GAME_SERVER?.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  if (!configured) return { host: window.location.host, protocol: window.location.protocol === 'https:' ? 'wss' : 'ws' };
+  const local = /^(localhost|127\.0\.0\.1)(:|$)/.test(configured);
+  return { host: configured, protocol: local ? 'ws' : 'wss' };
+}
+
 export interface OnlineOptions {
   code: string;
   playerName: string;
@@ -216,8 +229,7 @@ export function useOnlineGame(opts: OnlineOptions): GameController {
 
   useEffect(() => {
     const socket = new PartySocket({
-      host: window.location.host,
-      protocol: window.location.protocol === 'https:' ? 'wss' : 'ws',
+      ...gameServer(),
       party: PARTY,
       room: opts.code,
     });
