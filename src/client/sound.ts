@@ -112,12 +112,13 @@ const arpeggio = (notes: number[], step: number, o: Omit<ToneOptions, 'freq'>): 
   notes.forEach((n, i) => tone(ctx, out, t + i * step, { ...o, freq: note(n) }));
 
 export const SOUNDS: Record<SoundName, Voice> = {
-  select: (ctx, out, t) => tone(ctx, out, t, { freq: 1400, type: 'triangle', decay: 0.035, gain: 0.07 }),
+  // Muted pop.
+  select: (ctx, out, t) => tone(ctx, out, t, { freq: 600, to: 820, decay: 0.045, gain: 0.1 }),
 
-  // Wooden clack: a bright tap plus a short low knock.
+  // Soft felt thud for moves; captures get the louder wooden clack.
   move: (ctx, out, t) => {
-    noise(ctx, out, t, { freq: 2300, q: 2.2, decay: 0.045, gain: 0.55 });
-    tone(ctx, out, t, { freq: 190, to: 120, decay: 0.07, gain: 0.35 });
+    noise(ctx, out, t, { filter: 'lowpass', freq: 900, q: 0.7, decay: 0.06, gain: 0.55 });
+    tone(ctx, out, t, { freq: 140, to: 100, decay: 0.08, gain: 0.3 });
   },
   capture: (ctx, out, t) => {
     noise(ctx, out, t, { freq: 1500, q: 1.6, decay: 0.08, gain: 0.75 });
@@ -126,8 +127,7 @@ export const SOUNDS: Record<SoundName, Voice> = {
   },
 
   // A card sliding off the deck.
-  draw: (ctx, out, t) =>
-    noise(ctx, out, t, { filter: 'highpass', freq: 700, to: 5000, q: 0.7, attack: 0.03, decay: 0.16, gain: 0.28 }),
+  draw: (ctx, out, t) => noise(ctx, out, t, { freq: 1100, to: 2400, q: 0.8, attack: 0.025, decay: 0.12, gain: 0.22 }),
 
   // One sting per card, played as it flips face up.
   'card-move': (ctx, out, t) => {
@@ -139,10 +139,10 @@ export const SOUNDS: Record<SoundName, Voice> = {
     tone(ctx, out, t, { freq: 233, to: 196, type: 'sawtooth', decay: 0.24, gain: 0.16, cutoff: 1200 });
     tone(ctx, out, t + 0.28, { freq: 185, to: 98, type: 'sawtooth', decay: 0.5, gain: 0.16, cutoff: 900 });
   },
+  // Tape rewind.
   'card-undo': (ctx, out, t) => {
-    tone(ctx, out, t, { freq: 1100, to: 260, decay: 0.32, gain: 0.14 });
-    tone(ctx, out, t + 0.1, { freq: 800, to: 200, decay: 0.32, gain: 0.1 });
-    noise(ctx, out, t, { filter: 'bandpass', freq: 3000, to: 600, q: 1.2, attack: 0.02, decay: 0.3, gain: 0.12 });
+    noise(ctx, out, t, { freq: 4000, to: 700, q: 3, attack: 0.02, decay: 0.35, gain: 0.18 });
+    tone(ctx, out, t, { freq: 700, to: 250, type: 'triangle', decay: 0.35, gain: 0.1 });
   },
   'card-wild': (ctx, out, t) =>
     [88, 91, 95, 98, 100, 103].forEach((n, i) =>
@@ -158,11 +158,8 @@ export const SOUNDS: Record<SoundName, Voice> = {
     noise(ctx, out, t, { freq: 3500, to: 500, q: 2.5, attack: 0.01, decay: 0.22, gain: 0.25 });
     tone(ctx, out, t + 0.18, { freq: 400, to: 1700, type: 'sine', decay: 0.22, gain: 0.16 });
   },
-  swap: (ctx, out, t) => {
-    tone(ctx, out, t, { freq: note(88), decay: 0.55, gain: 0.14 });
-    tone(ctx, out, t + 0.08, { freq: note(95), decay: 0.6, gain: 0.12 });
-    noise(ctx, out, t, { filter: 'highpass', freq: 6000, q: 0.5, attack: 0.01, decay: 0.25, gain: 0.08 });
-  },
+  // Power-up run.
+  swap: arpeggio([79, 83, 86, 91], 0.05, { decay: 0.22, gain: 0.12 }),
   check: (ctx, out, t) => {
     tone(ctx, out, t, { freq: 880, type: 'square', decay: 0.09, gain: 0.12, cutoff: 2800 });
     tone(ctx, out, t + 0.12, { freq: 660, type: 'square', decay: 0.14, gain: 0.12, cutoff: 2800 });
@@ -173,18 +170,29 @@ export const SOUNDS: Record<SoundName, Voice> = {
     arpeggio([72, 76, 79], 0.11, { type: 'triangle', decay: 0.25, gain: 0.18 })(ctx, out, t);
     [72, 76, 79, 84].forEach((n) => tone(ctx, out, t + 0.36, { freq: note(n), type: 'triangle', decay: 1.1, gain: 0.11 }));
   },
-  loss: (ctx, out, t) => {
-    arpeggio([67, 63, 60], 0.2, { type: 'triangle', decay: 0.45, gain: 0.16 })(ctx, out, t);
-    tone(ctx, out, t + 0.6, { freq: note(48), decay: 0.9, gain: 0.14 });
-  },
-  'draw-game': arpeggio([76, 72], 0.18, { type: 'triangle', decay: 0.4, gain: 0.15 }),
+  // Sad trombone: four sliding notes, the last one drooping.
+  loss: (ctx, out, t) =>
+    [55, 54, 53, 52].forEach((n, i) =>
+      tone(ctx, out, t + i * 0.28, {
+        freq: note(n),
+        to: i === 3 ? note(n - 1) : undefined,
+        type: 'sawtooth',
+        attack: 0.03,
+        decay: i === 3 ? 0.8 : 0.22,
+        gain: 0.12,
+        cutoff: 900,
+      }),
+    ),
+  // Three-note shrug.
+  'draw-game': arpeggio([72, 74, 72], 0.15, { type: 'triangle', decay: 0.25, gain: 0.14 }),
 
   // Notifications.
   turn: (ctx, out, t) => {
     tone(ctx, out, t, { freq: 880, decay: 0.6, gain: 0.14 });
     tone(ctx, out, t, { freq: 1760, decay: 0.3, gain: 0.04 });
   },
-  chat: (ctx, out, t) => tone(ctx, out, t, { freq: 420, to: 950, decay: 0.08, gain: 0.18 }),
+  // Double blip.
+  chat: arpeggio([81, 86], 0.07, { decay: 0.06, gain: 0.12 }),
   tick: (ctx, out, t) => tone(ctx, out, t, { freq: 1050, type: 'square', decay: 0.025, gain: 0.07, cutoff: 3000 }),
   error: (ctx, out, t) => {
     tone(ctx, out, t, { freq: 150, type: 'square', decay: 0.13, gain: 0.08, cutoff: 900 });
