@@ -1,0 +1,15 @@
+{
+  "name": "Chance Chess",
+  "short_name": "Chance Chess",
+  "description": "Chess with a twist of luck: draw a card before every turn.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#120a2b",
+  "theme_color": "#120a2b",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

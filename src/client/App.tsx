@@ -1,25 +1,23 @@
 import { useEffect, useState } from 'react';
-import type { Color, GameRules } from '../engine';
-import type { Difficulty } from '../engine/ai';
-import { ROOM_CODE_PATTERN, type SeatChoice, randomRoomCode } from '../shared/protocol';
+import { randomRoomCode } from '../shared/protocol';
 import { useLocalGame, useOnlineGame } from './controllers';
 import { GameScreen } from './components/GameScreen';
 import { Home, type StartRequest } from './components/Home';
+import { type Screen, screenFromUrl } from './screens';
 import { loadValue, saveValue } from './storage';
-
-type Screen =
-  | { kind: 'home' }
-  | { kind: 'local'; id: number; mode: 'ai' | 'local'; humanColor: Color; difficulty: Difficulty; rules: GameRules }
-  | { kind: 'online'; code: string; seat?: SeatChoice; rules?: GameRules };
-
-function screenFromUrl(): Screen {
-  const code = new URLSearchParams(window.location.search).get('room')?.toUpperCase();
-  return code && ROOM_CODE_PATTERN.test(code) ? { kind: 'online', code } : { kind: 'home' };
-}
 
 export function App() {
   const [screen, setScreen] = useState<Screen>(screenFromUrl);
-  const [name, setName] = useState(() => loadValue('cc:name', ''));
+  // The pre-rendered home page has an empty name field; fill it in after hydrating.
+  const [name, setName] = useState(() => (screen.kind === 'home' ? '' : loadValue('cc:name', '')));
+
+  useEffect(() => {
+    setName((n) => n || loadValue('cc:name', ''));
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [screen.kind]);
 
   useEffect(() => {
     const onPop = () => setScreen(screenFromUrl());

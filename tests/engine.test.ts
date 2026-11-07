@@ -232,6 +232,23 @@ describe('cards', () => {
     expect(legalActions(s).moves).not.toContainEqual({ from: sq('e5'), to: sq('d6') });
   });
 
+  it('records board events for animations', () => {
+    let s = play(riggedGame({ w: ['move', 'undo'], b: ['move'] }, '4k3/8/8/3p4/4P3/8/8/4K3'), ['w', draw]);
+    const seq = s.seq;
+    s = play(s, ['w', mv('e4', 'd5')]);
+    expect(s.seq).toBe(seq + 1);
+    expect(s.events).toEqual([
+      { kind: 'capture', square: sq('d5'), piece: { type: 'p', color: 'b' } },
+      { kind: 'slide', from: sq('e4'), to: sq('d5'), piece: { type: 'p', color: 'w' } },
+    ]);
+    s = play(s, ['b', draw], ['b', mv('e8', 'e7')]);
+    s = play(s, ['w', draw]); // Undo
+    expect(s.events).toEqual([
+      { kind: 'slide', from: sq('d5'), to: sq('e4'), piece: { type: 'p', color: 'w' } },
+      { kind: 'appear', square: sq('d5'), piece: { type: 'p', color: 'b' } },
+    ]);
+  });
+
   it('resigning ends the game for either player at any time', () => {
     const s = play(newGame(), ['b', { kind: 'resign' }]);
     expect(s.result).toEqual({ winner: 'w', reason: 'resigned' });

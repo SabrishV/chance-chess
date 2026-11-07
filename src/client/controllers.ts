@@ -60,7 +60,7 @@ export interface LocalOptions {
 
 /** Minimum time the computer takes per step, so people can follow its cards. */
 const AI_DRAW_DELAY_MS = 700;
-const AI_MOVE_DELAY_MS = 900;
+const AI_MOVE_DELAY_MS = 1200;
 
 export function useLocalGame(opts: LocalOptions): GameController {
   const [state, setState] = useState<GameState>(() => newGame(Math.random, opts.rules));

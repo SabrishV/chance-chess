@@ -69,6 +69,17 @@ export interface GameResult {
 
 export type Phase = 'draw' | 'act' | 'over';
 
+/**
+ * What visibly happened on the board during the latest action, so the UI can
+ * animate it (pieces sliding, teleporting, being captured or swapped in).
+ */
+export type BoardEvent =
+  | { kind: 'slide'; from: Square; to: Square; piece: Piece }
+  | { kind: 'capture'; square: Square; piece: Piece }
+  | { kind: 'teleport'; from: Square; to: Square; piece: Piece }
+  | { kind: 'swap'; square: Square; before: Piece; after: Piece }
+  | { kind: 'appear'; square: Square; piece: Piece };
+
 /** Optional rule variations, fixed when a game is created. */
 export interface GameRules {
   /**
@@ -98,6 +109,10 @@ export interface GameState {
   log: TurnLog[];
   /** Squares touched by the most recent turn, for "last move" highlighting. */
   highlight: Square[];
+  /** Board changes made by the most recent action. */
+  events: BoardEvent[];
+  /** Increases with every action, so clients can tell new events from old. */
+  seq: number;
   result: GameResult | null;
 }
 
@@ -125,6 +140,8 @@ export function newGame(rng: Rng = Math.random, rules: GameRules = DEFAULT_RULES
     turnNumber: 1,
     log: [],
     highlight: [],
+    events: [],
+    seq: 0,
     result: null,
   };
 }
@@ -200,6 +217,8 @@ export function applyAction(
   if (state.phase === 'over') return fail('The game is over.');
 
   const s = structuredClone(state);
+  s.events = [];
+  s.seq++;
 
   if (action.kind === 'resign') {
     s.phase = 'over';
@@ -298,6 +317,13 @@ function doMove(s: GameState, action: Extract<Action, { kind: 'move' }>): Action
   s.pos = r.pos;
   const text = moveText(r, move);
 
+  if (r.captured) s.events.push({ kind: 'capture', square: r.captureSquare, piece: r.captured });
+  s.events.push({ kind: 'slide', from: move.from, to: move.to, piece: r.placed });
+  if (r.rook) s.events.push({ kind: 'slide', from: r.rook.from, to: r.rook.to, piece: { type: 'r', color } });
+  if (r.placed.type !== r.moved.type) {
+    s.events.push({ kind: 'swap', square: move.to, before: r.moved, after: r.placed });
+  }
+
   s.lastAction[color] = {
     kind: 'move',
     from: move.from,
@@ -330,6 +356,7 @@ function doDrop(s: GameState, action: Extract<Action, { kind: 'drop' }>): Action
   const inv = s.inventory[color];
   inv.splice(inv.indexOf(action.piece), 1);
   s.pos.board[action.to] = { type: action.piece, color };
+  s.events.push({ kind: 'swap', square: action.to, before: { type: 'p', color }, after: { type: action.piece, color } });
 
   const text = `★ ${PIECE_LETTER[action.piece]} swapped in on ${squareName(action.to)}`;
   s.lastAction[color] = { kind: 'drop', square: action.to, piece: action.piece, text };
@@ -346,6 +373,7 @@ function doTeleport(s: GameState, action: Extract<Action, { kind: 'teleport' }>)
   const prevCastling = { ...s.pos.castling[color] };
   s.pos.board[action.to] = piece;
   s.pos.board[action.from] = null;
+  s.events.push({ kind: 'teleport', from: action.from, to: action.to, piece });
   if (piece.type === 'k') s.pos.castling[color] = { k: false, q: false };
   if (piece.type === 'r') {
     const home = color === 'w' ? 0 : 56;
@@ -422,13 +450,16 @@ function undoLastAction(s: GameState, color: Color): string | null {
 
       b[rec.from] = rec.moved;
       b[rec.to] = null;
+      s.events.push({ kind: 'slide', from: rec.to, to: rec.from, piece: rec.moved });
       if (rec.captured) {
         inv.splice(inv.indexOf(rec.captured.type), 1);
         b[rec.captureSquare] = rec.captured;
+        s.events.push({ kind: 'appear', square: rec.captureSquare, piece: rec.captured });
       }
       if (rec.rook) {
         b[rec.rook.from] = b[rec.rook.to];
         b[rec.rook.to] = null;
+        s.events.push({ kind: 'slide', from: rec.rook.to, to: rec.rook.from, piece: { type: 'r', color } });
       }
       s.pos.castling[color] = { ...rec.prevCastling };
       s.highlight = [rec.from, rec.to];
@@ -438,6 +469,7 @@ function undoLastAction(s: GameState, color: Color): string | null {
       if (!samePiece(b[rec.square], { type: rec.piece, color })) return null;
       b[rec.square] = { type: 'p', color };
       inv.push(rec.piece);
+      s.events.push({ kind: 'swap', square: rec.square, before: { type: rec.piece, color }, after: { type: 'p', color } });
       s.highlight = [rec.square];
       break;
     }
@@ -445,6 +477,7 @@ function undoLastAction(s: GameState, color: Color): string | null {
       if (!samePiece(b[rec.to], rec.piece) || b[rec.from]) return null;
       b[rec.from] = b[rec.to];
       b[rec.to] = null;
+      s.events.push({ kind: 'teleport', from: rec.to, to: rec.from, piece: rec.piece });
       s.pos.castling[color] = { ...rec.prevCastling };
       s.highlight = [rec.from, rec.to];
       break;

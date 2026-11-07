@@ -30,9 +30,23 @@ npm install
 npm run dev      # http://localhost:5173 — site + multiplayer rooms in one server
 npm test         # rules engine + AI tests
 npm run typecheck
+npm run build    # production build, including the pre-rendered home page
+npm run preview  # build, then serve it locally like Cloudflare would
 ```
 
 To try online play locally, create a game and open the invite link in a second tab (each tab is its own player).
+
+## SEO
+
+- The home page (hero, how to play, card gallery, FAQ) is pre-rendered into `index.html` at build time by `scripts/prerender.mjs`, so crawlers and link previews get real content. The app then takes over in the browser.
+- `index.html` has the title, description, Open Graph / Twitter tags and `VideoGame` structured data; the build adds `FAQPage` structured data from `src/client/content.ts`.
+- Set `SITE_URL` when building for your real domain to add the canonical URL, absolute image URLs and `sitemap.xml` (a `robots.txt` is always written):
+
+  ```bash
+  SITE_URL=https://your-domain.example npm run deploy
+  ```
+
+- Icons and the link-preview image (`public/*.png`) are rendered from `scripts/brand/` with `scripts/render-brand.sh` (needs Chromium or Chrome).
 
 ## Deploying
 
@@ -43,6 +57,11 @@ npx wrangler login   # one time, needs a (free) Cloudflare account
 npm run deploy       # builds, then deploys to https://chance-chess.<your-subdomain>.workers.dev
 ```
 
+## Credits
+
+- Chess pieces: the "Celtic" set by Maurizio Monge, [MIT licence](public/pieces/LICENSE.txt).
+- Fonts: Fredoka and Nunito (SIL Open Font License), self-hosted via Fontsource.
+
 ## Project layout
 
 ```
@@ -51,6 +70,8 @@ src/engine/   Pure TypeScript rules: board & move generation, cards, turn flow, 
 src/server/   Cloudflare Worker + GameRoom Durable Object (one per online room).
 src/shared/   Message types between browser and server.
 src/client/   React UI. The AI runs in a Web Worker so the page stays responsive.
+public/       Piece artwork, icons, link-preview image, web app manifest.
+scripts/      Build-time pre-rendering and brand image rendering.
 tests/        Vitest tests, including perft checks for move generation.
 ```
 

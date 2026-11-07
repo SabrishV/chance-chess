@@ -2,13 +2,52 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Chance Chess: chess with a luck twist. Draw a card before every turn." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♞</text></svg>" />
-    <title>Chance Chess</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Chance Chess: Chess with Cards &amp; Luck | Play Free Online</title>
+    <meta
+      name="description"
+      content="Chance Chess is a free online chess variant: draw a card before every turn for double moves, teleports, wild swaps and cursed skips. Play friends with a link, or the computer."
+    />
+    <meta name="theme-color" content="#120a2b" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Chance Chess" />
+    <meta property="og:title" content="Chance Chess: Chess with Cards & Luck" />
+    <meta
+      property="og:description"
+      content="Draw a card before every turn: double moves, teleports, wild swaps and cursed skips. Free in your browser, with friends or against the computer."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Chance Chess logo with a fan of game cards and a chess knight" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Chance Chess: Chess with Cards & Luck" />
+    <meta name="twitter:description" content="Draw a card before every turn. Double moves, teleports, wild swaps and cursed skips." />
+    <meta name="twitter:image" content="/og-image.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": ["VideoGame", "WebApplication"],
+        "name": "Chance Chess",
+        "description": "A free online chess variant where you draw a card before every turn: double moves, teleports, wild swaps and cursed skips.",
+        "applicationCategory": "GameApplication",
+        "genre": ["Chess variant", "Board game", "Strategy", "Card game"],
+        "gamePlatform": "Web browser",
+        "operatingSystem": "Any",
+        "playMode": ["SinglePlayer", "MultiPlayer"],
+        "numberOfPlayers": { "@type": "QuantitativeValue", "minValue": 1, "maxValue": 2 },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>Chance Chess needs JavaScript to play.</noscript>
     <script type="module" src="/src/client/main.tsx"></script>
   </body>
 </html>
