@@ -170,6 +170,18 @@ a {
 .chip-btn:hover {
   background: var(--panel-strong);
 }
+.chip-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chip-icon path:first-child {
+  fill: currentColor;
+}
 .chip-btn.danger {
   color: var(--red);
   border-color: rgba(255, 90, 110, 0.4);

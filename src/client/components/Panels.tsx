@@ -27,6 +27,7 @@ export function PlayerBar({
   player,
   isYou,
   clockOffset,
+  tickWhenLow,
   bubble,
   bubbleBelow,
 }: {
@@ -35,6 +36,8 @@ export function PlayerBar({
   player: PlayerInfo | null;
   isYou: boolean;
   clockOffset: number;
+  /** Tick audibly in the last seconds (for clocks this screen plays). */
+  tickWhenLow?: boolean;
   /** A chat message to show as a speech bubble. */
   bubble?: { id: number; text: string };
   bubbleBelow?: boolean;
@@ -62,7 +65,7 @@ export function PlayerBar({
           <PieceImg key={i} piece={{ type: t, color: enemy }} className="tray-piece" />
         ))}
       </div>
-      <ClockDisplay view={view} color={color} offset={clockOffset} />
+      <ClockDisplay view={view} color={color} offset={clockOffset} tickWhenLow={tickWhenLow} />
       {bubble && (
         <div key={bubble.id} className={`speech ${bubbleBelow ? 'below' : 'above'}`} role="status">
           {bubble.text}
