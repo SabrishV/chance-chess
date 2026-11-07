@@ -1,0 +1,6 @@
+import { defineConfig } from 'vitest/config';
+
+// Kept separate from vite.config.ts so tests don't start the Cloudflare runtime.
+export default defineConfig({
+  test: { include: ['tests/**/*.test.ts'] },
+});

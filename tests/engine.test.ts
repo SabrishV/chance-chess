@@ -1,0 +1,285 @@
+import { describe, expect, it } from 'vitest';
+import {
+  type Action,
+  type CardType,
+  type Color,
+  type GameState,
+  type PieceType,
+  type Position,
+  applyAction,
+  applyMove,
+  findKing,
+  generateMoves,
+  isAttacked,
+  legalActions,
+  newGame,
+  opposite,
+  parseSquare as sq,
+  positionFromFen,
+  toView,
+} from '../src/engine';
+import { chooseAction } from '../src/engine/ai';
+
+// ---------------------------------------------------------------------------
+// Move generation, checked against standard perft numbers. Chance Chess itself
+// allows moving into check, so the perft helper filters to legal moves first.
+
+function fullFen(fen: string): Position {
+  const [placement, turn, castling, ep] = fen.split(' ');
+  const pos = positionFromFen(placement, turn as Color);
+  pos.castling = {
+    w: { k: castling.includes('K'), q: castling.includes('Q') },
+    b: { k: castling.includes('k'), q: castling.includes('q') },
+  };
+  if (ep !== '-') {
+    const target = sq(ep);
+    pos.ep = { target, pawn: turn === 'w' ? target - 8 : target + 8, by: opposite(turn as Color) };
+  }
+  return pos;
+}
+
+function perft(pos: Position, depth: number): number {
+  if (depth === 0) return 1;
+  let total = 0;
+  for (const m of generateMoves(pos)) {
+    const next = applyMove(pos, m).pos;
+    if (isAttacked(next.board, findKing(next.board, pos.turn), opposite(pos.turn))) continue;
+    next.turn = opposite(pos.turn);
+    total += perft(next, depth - 1);
+  }
+  return total;
+}
+
+describe('move generation', () => {
+  it('matches perft from the starting position', () => {
+    const start = newGame().pos;
+    expect(perft(start, 1)).toBe(20);
+    expect(perft(start, 2)).toBe(400);
+    expect(perft(start, 3)).toBe(8902);
+  });
+
+  it('matches perft for "Kiwipete" (castling, en passant, promotion)', () => {
+    const pos = fullFen('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -');
+    expect(perft(pos, 1)).toBe(48);
+    expect(perft(pos, 2)).toBe(2039);
+    expect(perft(pos, 3)).toBe(97862);
+  });
+
+  it('matches perft for an endgame with en passant pins', () => {
+    const pos = fullFen('8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -');
+    expect(perft(pos, 3)).toBe(2812);
+    expect(perft(pos, 4)).toBe(43238);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Game rules
+
+/** A game where each side's next cards are fixed (last element is drawn first). */
+function riggedGame(cards: Partial<Record<Color, CardType[]>>, fen?: string): GameState {
+  const g = newGame();
+  if (fen) g.pos = positionFromFen(fen);
+  if (cards.w) g.decks.w = [...cards.w].reverse();
+  if (cards.b) g.decks.b = [...cards.b].reverse();
+  return g;
+}
+
+function play(state: GameState, ...steps: [Color, Action][]): GameState {
+  let s = state;
+  for (const [color, action] of steps) {
+    const r = applyAction(s, action, color);
+    if (!r.ok) throw new Error(`${color} ${JSON.stringify(action)}: ${r.error}`);
+    s = r.state;
+  }
+  return s;
+}
+
+const draw: Action = { kind: 'draw' };
+const mv = (from: string, to: string, promotion?: PieceType): Action => ({
+  kind: 'move',
+  from: sq(from),
+  to: sq(to),
+  promotion,
+});
+
+describe('cards', () => {
+  it('Move: one move, then the turn passes', () => {
+    const s = play(riggedGame({ w: ['move'] }), ['w', draw], ['w', mv('e2', 'e4')]);
+    expect(s.pos.turn).toBe('b');
+    expect(s.phase).toBe('draw');
+    expect(s.pos.board[sq('e4')]).toEqual({ type: 'p', color: 'w' });
+  });
+
+  it('rejects acting out of turn or before drawing', () => {
+    const g = riggedGame({ w: ['move'] });
+    expect(applyAction(g, mv('e2', 'e4'), 'w').ok).toBe(false);
+    expect(applyAction(g, draw, 'b').ok).toBe(false);
+  });
+
+  it('Double Move: two moves, and the second one is optional', () => {
+    let s = play(riggedGame({ w: ['double', 'double'], b: ['move'] }), ['w', draw], ['w', mv('e2', 'e4')]);
+    expect(s.pos.turn).toBe('w');
+    expect(s.movesLeft).toBe(1);
+    s = play(s, ['w', mv('d2', 'd4')]);
+    expect(s.pos.turn).toBe('b');
+
+    s = play(s, ['b', draw], ['b', mv('e7', 'e5')], ['w', draw], ['w', mv('g1', 'f3')], ['w', { kind: 'endTurn' }]);
+    expect(s.pos.turn).toBe('b');
+  });
+
+  it('Skip: the turn passes without a move', () => {
+    const g = riggedGame({ w: ['skip'] });
+    const s = play(g, ['w', draw]);
+    expect(s.pos.turn).toBe('b');
+    expect(s.pos.board).toEqual(g.pos.board);
+    expect(s.log.at(-1)?.note).toMatch(/skipped/i);
+  });
+
+  it('Undo: takes back your last move, restoring a captured piece', () => {
+    let s = riggedGame({ w: ['move', 'move', 'undo'], b: ['move', 'move'] });
+    s = play(s, ['w', draw], ['w', mv('e2', 'e4')], ['b', draw], ['b', mv('d7', 'd5')]);
+    s = play(s, ['w', draw], ['w', mv('e4', 'd5')]);
+    expect(s.inventory.w).toEqual(['p']);
+    s = play(s, ['b', draw], ['b', mv('g8', 'f6')], ['w', draw]);
+
+    expect(s.pos.board[sq('e4')]).toEqual({ type: 'p', color: 'w' });
+    expect(s.pos.board[sq('d5')]).toEqual({ type: 'p', color: 'b' });
+    expect(s.inventory.w).toEqual([]);
+    expect(s.pos.turn).toBe('b');
+  });
+
+  it('Undo: does nothing if the moved piece was captured since', () => {
+    let s = riggedGame({ w: ['move', 'undo'], b: ['move'] }, '4k3/8/8/3p4/8/8/4P3/4K3');
+    s = play(s, ['w', draw], ['w', mv('e2', 'e4')], ['b', draw], ['b', mv('d5', 'e4')], ['w', draw]);
+    expect(s.log.at(-1)?.note).toMatch(/nothing to take back/i);
+    expect(s.pos.board[sq('e4')]).toEqual({ type: 'p', color: 'b' });
+    expect(s.pos.turn).toBe('b');
+  });
+
+  it('Undo: reverses castling', () => {
+    let s = riggedGame({ w: ['move', 'undo'], b: ['move'] }, 'r3k2r/8/8/8/8/8/8/R3K2R');
+    s.pos.castling = { w: { k: true, q: true }, b: { k: true, q: true } };
+    s = play(s, ['w', draw], ['w', mv('e1', 'g1')], ['b', draw], ['b', mv('a8', 'a7')], ['w', draw]);
+    expect(s.pos.board[sq('e1')]?.type).toBe('k');
+    expect(s.pos.board[sq('h1')]?.type).toBe('r');
+    expect(s.pos.castling.w).toEqual({ k: true, q: true });
+  });
+
+  it('Wild: swaps a pawn for a captured piece', () => {
+    let s = riggedGame({ w: ['wild'] }, '4k3/8/8/8/8/8/4P3/4K3');
+    s.inventory.w = ['q', 'p'];
+    const legal = legalActions(play(s, ['w', draw]));
+    expect(legal.drops).toEqual([{ piece: 'q', to: sq('e2') }]); // captured pawns can't be swapped in
+
+    s = play(s, ['w', draw], ['w', { kind: 'drop', piece: 'q', to: sq('e2') }]);
+    expect(s.pos.board[sq('e2')]).toEqual({ type: 'q', color: 'w' });
+    expect(s.inventory.w).toEqual(['p']);
+    expect(s.pos.turn).toBe('b');
+  });
+
+  it('Wild with nothing to swap still allows a normal move', () => {
+    const s = play(riggedGame({ w: ['wild'] }), ['w', draw], ['w', mv('e2', 'e4')]);
+    expect(s.pos.turn).toBe('b');
+  });
+
+  it('Teleport: any piece to any empty square, pawns never to the back ranks', () => {
+    let s = play(riggedGame({ w: ['teleport'] }), ['w', draw]);
+    const legal = legalActions(s);
+    expect(legal.teleports).toContainEqual({ from: sq('d1'), to: sq('h5') });
+    expect(legal.teleports).not.toContainEqual({ from: sq('e2'), to: sq('e8') });
+    expect(legal.teleports.every((t) => !s.pos.board[t.to])).toBe(true);
+
+    s = play(s, ['w', { kind: 'teleport', from: sq('d1'), to: sq('h5') }]);
+    expect(s.pos.board[sq('h5')]).toEqual({ type: 'q', color: 'w' });
+    expect(s.pos.turn).toBe('b');
+  });
+
+  it('Teleporting the king loses castling rights', () => {
+    let s = riggedGame({ w: ['teleport'] }, '4k3/8/8/8/8/8/8/R3K2R');
+    s.pos.castling.w = { k: true, q: true };
+    s = play(s, ['w', draw], ['w', { kind: 'teleport', from: sq('e1'), to: sq('e4') }]);
+    expect(s.pos.castling.w).toEqual({ k: false, q: false });
+  });
+
+  it('capturing the king wins the game', () => {
+    const s = play(riggedGame({ w: ['move'] }, '4k3/8/8/8/8/8/8/4K2Q'), ['w', draw], ['w', mv('h1', 'e4')]);
+    expect(s.phase).toBe('draw'); // e4 doesn't take the king yet; next line does
+    const s2 = play(riggedGame({ w: ['move'] }, '4k3/8/8/8/8/8/8/4Q2K'), ['w', draw], ['w', mv('e1', 'e8')]);
+    expect(s2.phase).toBe('over');
+    expect(s2.result).toEqual({ winner: 'w', reason: 'king-captured' });
+  });
+
+  it('giving check ends a double move (default rule)', () => {
+    const s = play(riggedGame({ w: ['double'] }, '4k3/8/8/8/8/8/8/3QK3'), ['w', draw], ['w', mv('d1', 'd8')]);
+    expect(s.pos.turn).toBe('b');
+    expect(s.log.at(-1)?.note).toMatch(/check/i);
+  });
+
+  it('without that rule, a double move can check and then capture the king', () => {
+    const g = riggedGame({ w: ['double'] }, '4k3/8/8/8/8/8/8/3QK3');
+    g.rules.checkEndsDoubleMove = false;
+    const s = play(g, ['w', draw], ['w', mv('d1', 'd8')], ['w', mv('d8', 'e8')]);
+    expect(s.result?.winner).toBe('w');
+  });
+
+  it('en passant is available only on the next turn', () => {
+    let s = riggedGame({ w: ['move', 'move', 'move'], b: ['move', 'skip'] }, '4k3/3p4/8/4P3/8/8/8/4K3');
+    s.pos.turn = 'b';
+    s = play(s, ['b', draw], ['b', mv('d7', 'd5')], ['w', draw]);
+    expect(legalActions(s).moves).toContainEqual({ from: sq('e5'), to: sq('d6') });
+
+    s = play(s, ['w', mv('e1', 'e2')], ['b', draw], ['w', draw]); // black skipped
+    expect(legalActions(s).moves).not.toContainEqual({ from: sq('e5'), to: sq('d6') });
+  });
+
+  it('resigning ends the game for either player at any time', () => {
+    const s = play(newGame(), ['b', { kind: 'resign' }]);
+    expect(s.result).toEqual({ winner: 'w', reason: 'resigned' });
+  });
+
+  it('reshuffles a new deck when the old one runs out', () => {
+    let s = riggedGame({ w: ['skip'], b: ['skip'] });
+    s = play(s, ['w', draw], ['b', draw], ['w', draw]);
+    expect(s.decks.w.length).toBe(39);
+  });
+
+  it('hides deck order in the view sent to players', () => {
+    const view = toView(newGame());
+    expect('decks' in view).toBe(false);
+    expect(view.deckCounts.w).toEqual({ move: 20, double: 5, skip: 4, undo: 3, wild: 5, teleport: 3 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AI
+
+describe('ai', () => {
+  it('captures the king when it can', () => {
+    const s = play(riggedGame({ w: ['move'] }, '4k3/8/8/8/8/8/8/4R1K1'), ['w', draw]);
+    expect(chooseAction(s, 'easy')).toEqual({ kind: 'move', from: sq('e1'), to: sq('e8') });
+  });
+
+  it('moves its king out of attack', () => {
+    const s = play(riggedGame({ w: ['move'] }, '4r1k1/8/8/8/8/8/8/4K3'), ['w', draw]);
+    const action = chooseAction(s, 'medium');
+    expect(action.kind).toBe('move');
+    if (action.kind === 'move') expect(action.from).toBe(sq('e1'));
+  });
+
+  it('uses a Wild card to bring back a queen', () => {
+    const s = riggedGame({ w: ['wild'] });
+    s.inventory.w = ['q'];
+    expect(chooseAction(play(s, ['w', draw]), 'medium').kind).toBe('drop');
+  });
+
+  it('plays whole games without errors at every difficulty', () => {
+    for (const difficulty of ['easy', 'medium', 'hard'] as const) {
+      let s = newGame();
+      for (let i = 0; i < 120 && s.phase !== 'over'; i++) {
+        const r = applyAction(s, chooseAction(s, difficulty), s.pos.turn);
+        if (!r.ok) throw new Error(r.error);
+        s = r.state;
+      }
+    }
+  }, 120_000);
+});

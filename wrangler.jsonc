@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "chance-chess",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-11-01",
+  // The built React app is served as static assets; only multiplayer
+  // WebSocket traffic (/parties/...) reaches the Worker.
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/parties/*"]
+  },
+  // Each online game is one Durable Object instance, addressed by room code
+  // at /parties/game-room/<CODE>.
+  "durable_objects": {
+    "bindings": [{ "name": "GameRoom", "class_name": "GameRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }]
+}
