@@ -29,6 +29,8 @@ import {
 
 interface Env {
   GameRoom: DurableObjectNamespace<GameRoom>;
+  /** Comma-separated website origins allowed to open game rooms; empty allows any. */
+  ALLOWED_ORIGINS?: string;
 }
 
 interface Seat {
@@ -287,11 +289,27 @@ export class GameRoom extends Server<Env> {
   }
 }
 
+/**
+ * Only our own website may open game rooms, so other sites can't build on top
+ * of this server (and use up its free quota). Browsers always send Origin on
+ * WebSocket connections; the Worker's own address is always allowed.
+ */
+function originAllowed(req: Request, env: Env): boolean {
+  const allowed = (env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+  if (allowed.length === 0) return true;
+  const origin = req.headers.get('Origin');
+  return !!origin && (origin === new URL(req.url).origin || allowed.includes(origin));
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const response = await routePartykitRequest(request, env, {
-      onBeforeConnect: (_req, lobby) => {
+      onBeforeConnect: (req, lobby) => {
         if (!ROOM_CODE_PATTERN.test(lobby.name)) return new Response('Unknown room', { status: 404 });
+        if (!originAllowed(req, env)) return new Response('Forbidden', { status: 403 });
       },
     });
     return response ?? new Response('Not found', { status: 404 });

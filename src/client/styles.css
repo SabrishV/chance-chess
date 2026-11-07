@@ -2112,11 +2112,29 @@ a {
 
 .footer {
   margin-top: 60px;
-  padding-top: 20px;
+  padding-top: 24px;
   border-top: 1px solid var(--line);
   text-align: center;
   color: var(--muted);
   font-size: 0.85rem;
+}
+.footer p {
+  margin: 6px 0;
+}
+.footer .credit {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--text);
+}
+.footer .credit a {
+  font-weight: 700;
+  color: var(--pink);
+  text-decoration: none;
+  border-bottom: 2px solid rgba(255, 79, 163, 0.4);
+  transition: border-color 0.15s;
+}
+.footer .credit a:hover {
+  border-color: var(--pink);
 }
 
 @media (max-width: 860px) {

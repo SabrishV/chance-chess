@@ -1,5 +1,7 @@
 // Page copy shared by the home page and the build-time pre-render (FAQ structured data).
 
+export const AUTHOR = { name: 'Sabrish', url: 'https://sabrish.vercel.app/' };
+
 export const FAQ: { q: string; a: string }[] = [
   {
     q: 'What is Chance Chess?',

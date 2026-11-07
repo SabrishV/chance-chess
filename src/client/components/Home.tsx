@@ -3,7 +3,7 @@ import { type Color, type GameRules, type TimeControl, CARD_ORDER, DECK_COMPOSIT
 import { DIFFICULTIES, type Difficulty } from '../../engine/ai';
 import { ROOM_CODE_PATTERN, type SeatChoice } from '../../shared/protocol';
 import { Card } from './Cards';
-import { FAQ } from '../content';
+import { AUTHOR, FAQ } from '../content';
 import { CardGallery } from './Panels';
 
 export type StartRequest =
@@ -214,10 +214,16 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
       </section>
 
       <footer className="footer">
-        <p>
-          Chance Chess · Chess pieces: “Celtic” set by Maurizio Monge (MIT). A game is drawn after 200 turns, or when only the
-          kings are left.
+        <p className="credit">
+          Created by{' '}
+          <a href={AUTHOR.url} target="_blank" rel="author noopener">
+            {AUTHOR.name}
+          </a>
         </p>
+        <p>
+          © 2026 {AUTHOR.name}. All rights reserved. A game is drawn after 200 turns, or when only the kings are left.
+        </p>
+        <p className="small">Chess pieces: “Celtic” set by Maurizio Monge (MIT). Fonts: Fredoka and Nunito (OFL).</p>
       </footer>
     </div>
   );

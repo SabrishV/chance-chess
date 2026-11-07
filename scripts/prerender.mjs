@@ -1,18 +1,21 @@
 // Runs after `vite build`. Renders the home page to static HTML inside
 // dist/client/index.html so search engines and link previews see real content,
-// then writes robots.txt and (when SITE_URL is set) sitemap.xml and absolute URLs.
+// then writes robots.txt, sitemap.xml and absolute URLs for the main site address.
+// Set SITE_URL to override that address (e.g. for a custom domain).
 //
-//   SITE_URL=https://chance-chess.example.com npm run build
-//
-// On Vercel, SITE_URL defaults to the project's production address.
+// Set CF_ANALYTICS_TOKEN (from Cloudflare dashboard > Web Analytics) to add
+// Cloudflare's cookie-free analytics beacon.
 
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import react from '@vitejs/plugin-react';
 import { createServer } from 'vite';
 
 const DIST = 'dist/client';
-const vercelUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-const SITE_URL = (process.env.SITE_URL || (vercelUrl ? `https://${vercelUrl}` : '')).replace(/\/+$/, '');
+// The site's one official address. Every build (Vercel and the Cloudflare copy)
+// points search engines here, so other addresses don't count as duplicates.
+const SITE_URL = (process.env.SITE_URL || 'https://chance-chess-sab.vercel.app').replace(/\/+$/, '');
+const ANALYTICS_TOKEN = (process.env.CF_ANALYTICS_TOKEN ?? '').trim();
+if (ANALYTICS_TOKEN && !/^[A-Za-z0-9-]+$/.test(ANALYTICS_TOKEN)) throw new Error('CF_ANALYTICS_TOKEN looks wrong');
 
 // JSON inside <script> must not be able to close the tag.
 const jsonForScript = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
@@ -43,24 +46,23 @@ try {
       '@type': 'FAQPage',
       mainEntity: FAQ.map(({ q, a }) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
     })}</script>`,
+    `<link rel="canonical" href="${SITE_URL}/" />`,
+    `<meta property="og:url" content="${SITE_URL}/" />`,
   ];
-  if (SITE_URL) {
-    head.push(`<link rel="canonical" href="${SITE_URL}/" />`, `<meta property="og:url" content="${SITE_URL}/" />`);
-    html = html.replaceAll('content="/og-image.png"', `content="${SITE_URL}/og-image.png"`);
-  }
+  html = html.replaceAll('content="/og-image.png"', `content="${SITE_URL}/og-image.png"`);
   html = html.replace('</head>', `    ${head.join('\n    ')}\n  </head>`);
+  if (ANALYTICS_TOKEN) {
+    const beacon = `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${ANALYTICS_TOKEN}"}'></script>`;
+    html = html.replace('</body>', `    ${beacon}\n  </body>`);
+  }
   await writeFile(`${DIST}/index.html`, html);
 
-  await writeFile(`${DIST}/robots.txt`, `User-agent: *\nAllow: /\n${SITE_URL ? `\nSitemap: ${SITE_URL}/sitemap.xml\n` : ''}`);
-  if (SITE_URL) {
-    const today = new Date().toISOString().slice(0, 10);
-    await writeFile(
-      `${DIST}/sitemap.xml`,
-      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${SITE_URL}/</loc><lastmod>${today}</lastmod></url>\n</urlset>\n`,
-    );
-  } else {
-    console.warn('prerender: SITE_URL not set, so no canonical URL or sitemap.xml was written.');
-  }
+  await writeFile(`${DIST}/robots.txt`, `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}/sitemap.xml\n`);
+  const today = new Date().toISOString().slice(0, 10);
+  await writeFile(
+    `${DIST}/sitemap.xml`,
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${SITE_URL}/</loc><lastmod>${today}</lastmod></url>\n</urlset>\n`,
+  );
   console.log(`prerender: home page rendered into ${DIST}/index.html`);
 } finally {
   await vite.close();

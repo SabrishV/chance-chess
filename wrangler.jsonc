@@ -14,5 +14,8 @@
   "durable_objects": {
     "bindings": [{ "name": "GameRoom", "class_name": "GameRoom" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }],
+  // Websites allowed to connect to game rooms (comma-separated origins).
+  // Empty allows any site. The Worker's own address is always allowed.
+  "vars": { "ALLOWED_ORIGINS": "https://chance-chess-sab.vercel.app,https://chance-chess-six.vercel.app" }
 }
