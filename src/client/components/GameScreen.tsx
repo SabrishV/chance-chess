@@ -17,6 +17,8 @@ import { Deck } from './Cards';
 import { Banner, CardReveal, GameOverModal, PromotionPicker, type Reveal } from './Overlays';
 import { CardCounter, CardZone, PlayerBar, Timeline } from './Panels';
 import { COLOR_NAME } from './Piece';
+import { sound } from '../sound';
+import { useGameSounds } from '../useGameSounds';
 
 const NO_ACTIONS: LegalActions = { moves: [], drops: [], teleports: [], canEndTurn: false };
 
@@ -38,6 +40,7 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
   const [promotion, setPromotion] = useState<{ from: Square; to: Square } | null>(null);
   const [flipped, setFlipped] = useState(false);
   const [theme, setTheme] = useState<BoardTheme>(() => loadValue('cc:board', 'green'));
+  const [soundOn, setSoundOn] = useState(sound.enabled);
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const [banner, setBanner] = useState<{ id: number; text: string; tone: 'danger' | 'info' } | null>(null);
   const [resultDismissed, setResultDismissed] = useState(false);
@@ -120,6 +123,8 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
     }
   }, [game.chat, myColors, timelineOpen]);
 
+  useGameSounds(game);
+
   // Space bar draws a card.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -200,7 +205,9 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
       setSelected(null);
       return;
     }
-    setSelected(movable.has(sq) && sq !== selected ? sq : null);
+    const pick = movable.has(sq) && sq !== selected ? sq : null;
+    if (pick !== null) sound.play('select');
+    setSelected(pick);
   }
 
   const me = myColors.length === 1 ? myColors[0] : null;
@@ -248,6 +255,22 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
           </button>
         )}
         <nav className="top-actions" aria-label="Game options">
+          <button
+            className="chip-btn"
+            type="button"
+            onClick={() => {
+              sound.setEnabled(!soundOn);
+              setSoundOn(!soundOn);
+            }}
+            aria-pressed={soundOn}
+            title={soundOn ? 'Mute sounds' : 'Turn sounds on'}
+          >
+            <svg className="chip-icon" viewBox="0 0 24 24" aria-hidden>
+              <path d="M4 9h4l5-4v14l-5-4H4z" />
+              {soundOn ? <path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /> : <path d="M17 9l5 6M22 9l-5 6" />}
+            </svg>
+            <span className="lbl">{soundOn ? 'Sound' : 'Muted'}</span>
+          </button>
           <button className="chip-btn" type="button" onClick={nextTheme} title="Change board colours">
             ◐ <span className="lbl">{BOARD_THEMES[theme]}</span>
           </button>
@@ -276,6 +299,7 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
             player={players[top]}
             isYou={me === top}
             clockOffset={game.clockOffset}
+            tickWhenLow={myColors.includes(top)}
             bubble={bubbles[top]}
             bubbleBelow
           />
@@ -324,6 +348,7 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
             player={players[orientation]}
             isYou={me === orientation}
             clockOffset={game.clockOffset}
+            tickWhenLow={myColors.includes(orientation)}
             bubble={bubbles[orientation]}
           />
         </section>
@@ -375,6 +400,7 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
               onEndTurn={() => game.send({ kind: 'endTurn' })}
               onPickDrop={(p) => {
                 setSelected(null);
+                if (p) sound.play('select');
                 setDropPiece(p);
               }}
             />

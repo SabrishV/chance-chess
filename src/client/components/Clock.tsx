@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type Color, type GameView, timeLeft } from '../../engine';
+import { sound } from '../sound';
 
 /** Under this much time the clock turns red and shows tenths. */
 const LOW_TIME_MS = 20_000;
+/** Under this much time your own clock ticks every second. */
+const TICK_TIME_MS = 10_000;
 
 function formatTime(ms: number): string {
   if (ms < LOW_TIME_MS) {
@@ -14,7 +17,17 @@ function formatTime(ms: number): string {
 }
 
 /** One player's chess clock. `offset` lines this browser's time up with the game's. */
-export function ClockDisplay({ view, color, offset }: { view: GameView; color: Color; offset: number }) {
+export function ClockDisplay({
+  view,
+  color,
+  offset,
+  tickWhenLow = false,
+}: {
+  view: GameView;
+  color: Color;
+  offset: number;
+  tickWhenLow?: boolean;
+}) {
   const clock = view.clock;
   const running = !!clock && clock.runningSince !== null && view.pos.turn === color && view.phase !== 'over';
   const [now, setNow] = useState(() => Date.now());
@@ -25,8 +38,17 @@ export function ClockDisplay({ view, color, offset }: { view: GameView; color: C
     return () => clearInterval(id);
   }, [running]);
 
+  const ms = clock ? timeLeft(view, color, (running ? now : Date.now()) + offset) : Infinity;
+
+  const lastTick = useRef<number | null>(null);
+  useEffect(() => {
+    const second = Math.ceil(ms / 1000);
+    if (!running || !tickWhenLow || ms <= 0 || ms >= TICK_TIME_MS || second === lastTick.current) return;
+    lastTick.current = second;
+    sound.play('tick');
+  }, [ms, running, tickWhenLow]);
+
   if (!clock) return null;
-  const ms = timeLeft(view, color, (running ? now : Date.now()) + offset);
   const classes = ['clock', running && 'running', ms < LOW_TIME_MS && 'low', ms === 0 && 'out'].filter(Boolean).join(' ');
   return (
     <span className={classes} role="timer" aria-label={`${formatTime(ms)} left`}>
