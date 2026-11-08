@@ -8,7 +8,7 @@ Play the computer, pass & play on one device, or play a friend online with a sha
 | | |
 | :---: | :---: |
 | ![Chance Chess home page with a fan of game cards](images/home.webp)<br>**Play the computer, a friend online, or pass & play** | ![A game against the computer with a Double Move card in play](images/game.webp)<br>**Draw a card, then play it** (with an optional chess clock) |
-| ![A Skip card stamped "Skipped!" over the board](images/cursed-card.webp)<br>**Cursed cards can cost you a turn** | ![Teleport portals showing every square a piece can jump to](images/teleport.webp)<br>**Teleport any piece to any empty square** |
+| ![An Undo card stamped "Rewind!" over the board](images/cursed-card.webp)<br>**Cursed cards can cost you a turn** | ![Teleport portals showing every square a piece can jump to](images/teleport.webp)<br>**Teleport any piece to any empty square** |
 
 ## Rules
 
@@ -36,11 +36,11 @@ Draws: 200 turns in total, or only the kings left.
 
 ## Credits
 
-Created by [Sabrish](https://sabrish.vercel.app/).
+Created by Sabrish Varadharajan ([portfolio website](https://sabrish.vercel.app/)).
 
 - Chess pieces: the "Celtic" set by Maurizio Monge, [MIT licence](public/pieces/LICENSE.txt).
 - Fonts: Fredoka and Nunito (SIL Open Font License).
 
 ## Licence
 
-Copyright © 2026 Sabrish. All rights reserved. The code, artwork and text in this repository may not be copied, modified, hosted or redistributed without written permission. See [LICENSE](LICENSE).
+Copyright © 2026 Sabrish Varadharajan. All rights reserved. The code, artwork and text in this repository may not be copied, modified, hosted or redistributed without written permission. See [LICENSE](LICENSE).

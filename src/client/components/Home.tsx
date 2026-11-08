@@ -71,7 +71,7 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
     <div className="home">
       <header className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">Free online chess variant</p>
+          <p className="eyebrow">Free online chess based on luck</p>
           <h1 className="logo">
             Chance <span>Chess</span>
           </h1>
@@ -215,9 +215,11 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
 
       <footer className="footer">
         <p className="credit">
-          Created by{' '}
-          <a href={AUTHOR.url} target="_blank" rel="author noopener">
-            {AUTHOR.name}
+          Created by <b>{AUTHOR.name}</b>
+        </p>
+        <p>
+          <a className="portfolio-link" href={AUTHOR.url} target="_blank" rel="author noopener">
+            Portfolio website ↗
           </a>
         </p>
         <p>
