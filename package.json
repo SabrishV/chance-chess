@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Chess with a luck twist: draw a card before every turn.",
-  "author": "Sabrish (https://sabrish.vercel.app/)",
+  "author": "Sabrish Varadharajan (https://sabrish.vercel.app/)",
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {

@@ -2138,14 +2138,23 @@ a {
   font-size: 1.15rem;
   color: var(--text);
 }
-.footer .credit a {
-  font-weight: 700;
+.footer .credit b {
   color: var(--pink);
-  text-decoration: none;
-  border-bottom: 2px solid rgba(255, 79, 163, 0.4);
-  transition: border-color 0.15s;
 }
-.footer .credit a:hover {
+.portfolio-link {
+  display: inline-block;
+  margin: 2px 0 6px;
+  padding: 6px 16px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 79, 163, 0.5);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.portfolio-link:hover {
+  background: rgba(255, 79, 163, 0.15);
   border-color: var(--pink);
 }
 
