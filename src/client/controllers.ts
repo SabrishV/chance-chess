@@ -79,6 +79,8 @@ export interface LocalOptions {
  * move finishes animating before it draws, and its card reveal finishes before it moves.
  */
 const AI_DRAW_DELAY_MS = 1000;
+/** After your Skip/Undo, wait for its reveal over the board to finish first. */
+const AI_DRAW_AFTER_REVEAL_MS = 2700;
 const AI_FIRST_MOVE_DELAY_MS = 1900;
 const AI_NEXT_MOVE_DELAY_MS = 1200;
 
@@ -112,8 +114,16 @@ export function useLocalGame(opts: LocalOptions): GameController {
 
     const id = ++requestId.current;
     const started = Date.now();
+    const last = state.log.at(-1);
+    const turnEndedOnTheSpot = !!last && last.actions.length === 0 && !!last.note;
     const minDelay =
-      state.phase === 'draw' ? AI_DRAW_DELAY_MS : state.movesMade === 0 ? AI_FIRST_MOVE_DELAY_MS : AI_NEXT_MOVE_DELAY_MS;
+      state.phase === 'draw'
+        ? turnEndedOnTheSpot
+          ? AI_DRAW_AFTER_REVEAL_MS
+          : AI_DRAW_DELAY_MS
+        : state.movesMade === 0
+          ? AI_FIRST_MOVE_DELAY_MS
+          : AI_NEXT_MOVE_DELAY_MS;
     let timer: number | undefined;
     setThinking(true);
 
