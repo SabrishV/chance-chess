@@ -3,15 +3,18 @@ import {
   type Action,
   type CardType,
   type Color,
+  type GameMode,
   type GameState,
   type PieceType,
   type Position,
   applyAction,
   applyMove,
   checkTimeout,
+  DEFAULT_RULES,
   findKing,
   generateMoves,
   isAttacked,
+  isLastChance,
   legalActions,
   newGame,
   opposite,
@@ -79,8 +82,8 @@ describe('move generation', () => {
 // Game rules
 
 /** A game where each side's next cards are fixed (last element is drawn first). */
-function riggedGame(cards: Partial<Record<Color, CardType[]>>, fen?: string): GameState {
-  const g = newGame();
+function riggedGame(cards: Partial<Record<Color, CardType[]>>, fen?: string, mode: GameMode = 'capture'): GameState {
+  const g = newGame(Math.random, { ...DEFAULT_RULES, mode });
   if (fen) g.pos = positionFromFen(fen);
   if (cards.w) g.decks.w = [...cards.w].reverse();
   if (cards.b) g.decks.b = [...cards.b].reverse();
@@ -271,10 +274,165 @@ describe('cards', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Skip and Undo while in check
+
+describe('cursed cards while in check', () => {
+  // White king on e1 attacked by a black rook on a1.
+  const CHECK = '4k3/8/8/8/8/8/8/r3K3';
+
+  it('shuffles Skip back into the deck and draws the next card', () => {
+    const s = play(riggedGame({ w: ['skip', 'move'] }, CHECK), ['w', draw]);
+    expect(s.card).toBe('move');
+    expect(s.log.at(-1)?.heldBack).toEqual(['skip']);
+    expect(s.decks.w).toContain('skip');
+  });
+
+  it('holds back Undo too', () => {
+    const s = play(riggedGame({ w: ['undo', 'skip', 'double'] }, CHECK), ['w', draw]);
+    expect(s.card).toBe('double');
+    // Curses go back to a random place, so the same one can come up more than once.
+    const heldBack = s.log.at(-1)?.heldBack ?? [];
+    expect(heldBack[0]).toBe('undo');
+    expect(heldBack.every((c) => c === 'skip' || c === 'undo')).toBe(true);
+    expect(s.decks.w.filter((c) => c === 'skip' || c === 'undo').sort()).toEqual(['skip', 'undo']);
+  });
+
+  it('finds a playable card even when only curses are left', () => {
+    const s = play(riggedGame({ w: ['skip', 'undo'] }, CHECK), ['w', draw]);
+    expect(['skip', 'undo']).not.toContain(s.card);
+  });
+
+  it('deals Skip as normal when the king is safe', () => {
+    const s = play(riggedGame({ w: ['skip'] }), ['w', draw]);
+    expect(s.pos.turn).toBe('b');
+    expect(s.log.at(-1)?.heldBack).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Checkmate mode
+
+describe('checkmate mode', () => {
+  // Back-rank mate: white king h1 boxed in by its own pawns, black rook on a1.
+  const MATED = '6k1/8/8/8/8/8/6PP/r6K';
+
+  it('does not allow moving into check', () => {
+    const s = play(riggedGame({ w: ['move'] }, '4k3/8/8/8/8/8/r7/4K3', 'checkmate'), ['w', draw]);
+    const kingMoves = legalActions(s).moves.filter((m) => m.from === sq('e1')).map((m) => m.to);
+    expect(kingMoves.sort()).toEqual([sq('d1'), sq('f1')].sort());
+    const r = applyAction(s, mv('e1', 'e2'), 'w');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/check/);
+  });
+
+  it('still allows it in capture mode', () => {
+    const s = play(riggedGame({ w: ['move'] }, '4k3/8/8/8/8/8/r7/4K3'), ['w', draw], ['w', mv('e1', 'e2')]);
+    expect(s.pos.board[sq('e2')]?.type).toBe('k');
+  });
+
+  it('flags the last chance before the draw', () => {
+    expect(isLastChance(riggedGame({ w: ['move'] }, MATED, 'checkmate'))).toBe(true);
+    expect(isLastChance(riggedGame({ w: ['move'] }, MATED))).toBe(false);
+  });
+
+  it('is checkmate when the drawn card cannot save the king', () => {
+    const s = play(riggedGame({ w: ['double'] }, MATED, 'checkmate'), ['w', draw]);
+    expect(s.result).toEqual({ winner: 'b', reason: 'checkmate' });
+    expect(s.log.at(-1)).toMatchObject({ lastChance: true, note: 'Checkmate!' });
+  });
+
+  it('a lucky Teleport saves the king', () => {
+    const s = play(riggedGame({ w: ['teleport'] }, MATED, 'checkmate'), ['w', draw]);
+    expect(s.result).toBeNull();
+    expect(s.log.at(-1)?.note).toBe('Saved by the Teleport!');
+    const { teleports } = legalActions(s);
+    expect(teleports.length).toBeGreaterThan(0);
+    const saved = play(s, ['w', { kind: 'teleport', ...teleports[0] }]);
+    expect(saved.pos.turn).toBe('b');
+  });
+
+  it('never deals Skip on the last chance', () => {
+    const s = play(riggedGame({ w: ['skip', 'move'] }, MATED, 'checkmate'), ['w', draw]);
+    expect(s.log.at(-1)?.heldBack).toEqual(['skip']);
+    expect(s.result?.reason).toBe('checkmate');
+  });
+
+  it('Undo cannot put your own king back in check', () => {
+    // White blocks a check with Ra3-e3; taking that back would expose the king.
+    let s = riggedGame({ w: ['move', 'undo'], b: ['move'] }, '4r2k/8/8/8/8/R7/8/4K3', 'checkmate');
+    s = play(s, ['w', draw], ['w', mv('a3', 'e3')], ['b', draw], ['b', mv('h8', 'g8')], ['w', draw]);
+    expect(s.log.at(-1)?.note).toBe('Nothing to take back.');
+    expect(s.pos.board[sq('e3')]?.type).toBe('r');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Card hand mode
+
+describe('card hand mode', () => {
+  it('keeps a power card and makes a normal move instead', () => {
+    let s = play(riggedGame({ w: ['teleport'] }, undefined, 'hand'), ['w', draw]);
+    expect(legalActions(s).canKeep).toBe(true);
+    s = play(s, ['w', { kind: 'keep' }]);
+    expect(s.hands.w).toEqual(['teleport']);
+    expect(s.card).toBe('move');
+    expect(legalActions(s).teleports).toEqual([]);
+    s = play(s, ['w', mv('e2', 'e4')]);
+    expect(s.pos.turn).toBe('b');
+    expect(s.log.at(-1)?.kept).toBe('teleport');
+  });
+
+  it('cannot keep Move cards, or more than three cards', () => {
+    expect(legalActions(play(riggedGame({ w: ['move'] }, undefined, 'hand'), ['w', draw])).canKeep).toBe(false);
+    const g = riggedGame({ w: ['double'] }, undefined, 'hand');
+    g.hands.w = ['wild', 'wild', 'teleport'];
+    expect(legalActions(play(g, ['w', draw])).canKeep).toBe(false);
+  });
+
+  it('plays a kept card instead of the drawn one, keeping a drawn power card', () => {
+    const g = riggedGame({ w: ['double'] }, undefined, 'hand');
+    g.hands.w = ['teleport'];
+    let s = play(g, ['w', draw], ['w', { kind: 'playKept', card: 'teleport' }]);
+    expect(s.card).toBe('teleport');
+    expect(s.hands.w).toEqual(['double']);
+    expect(s.log.at(-1)).toMatchObject({ played: 'teleport', kept: 'double' });
+    s = play(s, ['w', { kind: 'teleport', from: sq('d1'), to: sq('d4') }]);
+    expect(s.pos.turn).toBe('b');
+  });
+
+  it('sets a drawn Move card aside when a kept card is played', () => {
+    const g = riggedGame({ w: ['move'] }, undefined, 'hand');
+    g.hands.w = ['wild'];
+    const s = play(g, ['w', draw], ['w', { kind: 'playKept', card: 'wild' }]);
+    expect(s.hands.w).toEqual([]);
+    expect(s.card).toBe('wild');
+  });
+
+  it('only before the first move of the turn', () => {
+    const s = play(riggedGame({ w: ['double'] }, undefined, 'hand'), ['w', draw], ['w', mv('e2', 'e4')]);
+    expect(applyAction(s, { kind: 'keep' }, 'w').ok).toBe(false);
+  });
+
+  it('Skip and Undo still hit you right away', () => {
+    const g = riggedGame({ w: ['skip'] }, undefined, 'hand');
+    g.hands.w = ['teleport'];
+    const s = play(g, ['w', draw]);
+    expect(s.pos.turn).toBe('b');
+    expect(s.hands.w).toEqual(['teleport']);
+  });
+
+  it('hands are visible to both players', () => {
+    const g = riggedGame({}, undefined, 'hand');
+    g.hands.b = ['double'];
+    expect(toView(g).hands.b).toEqual(['double']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Clock
 
 describe('clock', () => {
-  const blitz = { checkEndsDoubleMove: true, timeControl: { initialMs: 60_000, incrementMs: 2_000 } };
+  const blitz = { ...DEFAULT_RULES, timeControl: { initialMs: 60_000, incrementMs: 2_000 } };
   const clocked = (cards: CardType[]) => {
     const g = newGame(Math.random, blitz);
     g.decks.w = [...cards].reverse();
@@ -347,6 +505,22 @@ describe('ai', () => {
     const s = riggedGame({ w: ['wild'] });
     s.inventory.w = ['q'];
     expect(chooseAction(play(s, ['w', draw]), 'medium').kind).toBe('drop');
+  });
+
+  it('plays whole games without errors in every mode', () => {
+    for (const mode of ['checkmate', 'hand'] as const) {
+      let s = newGame(Math.random, { ...DEFAULT_RULES, mode });
+      for (let i = 0; i < 150 && s.phase !== 'over'; i++) {
+        const r = applyAction(s, chooseAction(s, 'medium'), s.pos.turn);
+        if (!r.ok) throw new Error(`${mode}: ${r.error}`);
+        s = r.state;
+      }
+    }
+  }, 120_000);
+
+  it('keeps a Teleport rather than wasting it on the first move', () => {
+    const s = play(riggedGame({ w: ['teleport'] }, undefined, 'hand'), ['w', draw]);
+    expect(chooseAction(s, 'medium').kind).toBe('keep');
   });
 
   it('plays whole games without errors at every difficulty', () => {

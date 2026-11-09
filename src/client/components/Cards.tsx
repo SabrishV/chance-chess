@@ -109,12 +109,29 @@ export function CardBack({ size = 'lg' }: { size?: CardSize }) {
 
 /**
  * A card that is dealt from the deck and flips face up. Give it a new `key`
- * for every draw so the animation plays again.
+ * for every draw so the animation plays again. `suspense` makes it hover face
+ * down for a moment before flipping (the checkmate last-chance draw).
  */
-export function DealtCard({ card, size = 'lg', stamp = false }: { card: CardType; size?: CardSize; stamp?: boolean }) {
+export function DealtCard({
+  card,
+  size = 'lg',
+  stamp = false,
+  stampText,
+  stampTone,
+  suspense = false,
+}: {
+  card: CardType;
+  size?: CardSize;
+  stamp?: boolean;
+  /** Replaces the card's own stamp word. */
+  stampText?: string;
+  stampTone?: 'gold' | 'red';
+  suspense?: boolean;
+}) {
   const art = CARD_ART[card];
+  const stampWord = stampText ?? art.stamp;
   return (
-    <div className={`dealt size-${size} fx-${card}`}>
+    <div className={`dealt size-${size} fx-${card} ${suspense ? 'suspense' : ''}`}>
       <div className="dealt-inner">
         <div className="dealt-face">
           <Card card={card} size={size} />
@@ -123,7 +140,7 @@ export function DealtCard({ card, size = 'lg', stamp = false }: { card: CardType
           <CardBack size={size} />
         </div>
       </div>
-      {stamp && art.stamp && <div className="card-stamp">{art.stamp}</div>}
+      {stamp && stampWord && <div className={`card-stamp ${stampTone ?? ''}`}>{stampWord}</div>}
     </div>
   );
 }
@@ -142,11 +159,12 @@ export function Deck({ count, size = 'lg' }: { count: number; size?: CardSize })
   );
 }
 
-export function CardChip({ card }: { card: CardType }) {
+/** A small pill naming a card; `compact` shows just its symbol. */
+export function CardChip({ card, compact = false }: { card: CardType; compact?: boolean }) {
   return (
-    <span className={`card-chip card-${card}`} style={cardStyle(card)}>
+    <span className={`card-chip card-${card} ${compact ? 'compact' : ''}`} style={cardStyle(card)} title={CARDS[card].name}>
       <b>{CARDS[card].symbol}</b>
-      {CARDS[card].name}
+      {!compact && CARDS[card].name}
     </span>
   );
 }

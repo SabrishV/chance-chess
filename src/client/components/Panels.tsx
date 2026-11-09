@@ -3,10 +3,12 @@ import {
   CARD_ORDER,
   CARDS,
   DECK_COMPOSITION,
+  type CardType,
   type Color,
   type GameView,
   type LegalActions,
   type PieceType,
+  HAND_LIMIT,
   droppable,
 } from '../../engine';
 import { CHAT_MAX_LENGTH, type ChatMessage, type PlayerInfo } from '../../shared/protocol';
@@ -65,6 +67,14 @@ export function PlayerBar({
           <PieceImg key={i} piece={{ type: t, color: enemy }} className="tray-piece" />
         ))}
       </div>
+      {view.rules.mode === 'hand' && (
+        <div className="hand-mini" title={`Kept cards (${view.hands[color].length} of ${HAND_LIMIT})`}>
+          {view.hands[color].map((c, i) => (
+            <CardChip key={i} card={c} compact />
+          ))}
+          {view.hands[color].length === 0 && <span className="hand-empty">no cards</span>}
+        </div>
+      )}
       <ClockDisplay view={view} color={color} offset={clockOffset} tickWhenLow={tickWhenLow} />
       {bubble && (
         <div key={bubble.id} className={`speech ${bubbleBelow ? 'below' : 'above'}`} role="status">
@@ -102,12 +112,14 @@ interface CardZoneProps {
   dropPiece: PieceType | null;
   onDraw: () => void;
   onEndTurn: () => void;
+  onKeep: () => void;
+  onPlayKept: (card: CardType) => void;
   onPickDrop: (p: PieceType | null) => void;
 }
 
 /** The deck, the card in play and what to do with it. */
 export function CardZone(props: CardZoneProps) {
-  const { view, myTurn, canAct, legal, turnName, thinking, dropPiece, onDraw, onEndTurn, onPickDrop } = props;
+  const { view, myTurn, canAct, legal, turnName, thinking, dropPiece, onDraw, onEndTurn, onKeep, onPlayKept, onPickDrop } = props;
   const color = view.pos.turn;
   const dealKey = view.log.length;
 
@@ -160,6 +172,27 @@ export function CardZone(props: CardZoneProps) {
             <button className="btn btn-ghost" type="button" onClick={onEndTurn}>
               End turn
             </button>
+          )}
+          {(legal.canKeep || legal.playable.length > 0) && (
+            <div className="hand-controls">
+              {legal.canKeep && (
+                <button className="btn btn-gold" type="button" onClick={onKeep}>
+                  Keep {CARDS[view.card].name} for later
+                </button>
+              )}
+              {legal.playable.length > 0 && (
+                <>
+                  <span className="small muted">Or play a kept card instead:</span>
+                  <div className="hand-row">
+                    {legal.playable.map((c) => (
+                      <button key={c} className="hand-play" type="button" onClick={() => onPlayKept(c)} aria-label={`Play your kept ${CARDS[c].name}`}>
+                        <CardChip card={c} />
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -264,10 +297,21 @@ export function Timeline({
           <span className="log-turn">{entry.turn}</span>
           <span className={`side-dot side-${entry.color}`} title={names[entry.color]} />
           <CardChip card={entry.card} />
+          {entry.played && (
+            <span className="log-tag">
+              played kept <CardChip card={entry.played} compact />
+            </span>
+          )}
           <span className="log-text">
             {entry.actions.join(', ')}
             {entry.note && <em> {entry.note}</em>}
+            {entry.heldBack && <em> ({entry.heldBack.map((c) => CARDS[c].name).join(', ')} held back: king in check)</em>}
           </span>
+          {entry.kept && (
+            <span className="log-tag">
+              kept <CardChip card={entry.kept} compact />
+            </span>
+          )}
         </div>
       );
     });

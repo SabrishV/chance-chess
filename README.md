@@ -15,7 +15,13 @@ Play the computer, pass & play on one device, or play a friend online with a sha
 Normal chess movement, plus:
 
 - **Draw a card before every turn.** Each player has their own 40-card deck, reshuffled when it runs out. The card counter shows what is left in both decks.
-- **Win by capturing the king.** There is no check or checkmate: you may leave your king attacked, and the game ends when a king is actually taken. (Castling still can't pass through attacked squares.)
+- **Skip and Undo are never dealt while your king is in check.** They're shuffled back into your deck and you draw again.
+
+### Game modes
+
+- **Capture the king** (classic): there is no check or checkmate. You may leave your king attacked, and the game ends when a king is actually taken. (Castling still can't pass through attacked squares.)
+- **Checkmate:** real chess rules. No move, teleport or swap may leave your own king in check, and you win by checkmate. Checkmate is decided after the draw: when no normal move can save your king, you get a dramatic last-chance draw, and only a Teleport can rescue you. With no legal move and no check, your turn is simply skipped.
+- **Card hand:** like Capture the king, but when you draw a Double Move, Wild or Teleport you can keep it (up to 3 cards) and make a normal move instead. On a later turn, play a kept card instead of the one you drew. Both players can see each other's hand. Skip and Undo still hit you straight away.
 
 | Card | Count | Effect |
 | --- | --- | --- |

@@ -9,6 +9,7 @@ import {
   type PieceType,
   type Position,
   type Square,
+  type Board,
   PIECE_LETTER,
   findKing,
   initialPosition,
@@ -16,7 +17,7 @@ import {
   rankOf,
   squareName,
 } from './board';
-import { type CardType, type Rng, countCards, shuffledDeck } from './cards';
+import { type CardType, type Rng, CARDS, countCards, shuffledDeck } from './cards';
 import { type Move, applyMove, generateMoves, isAttacked, promotionRank } from './moves';
 
 export type Action =
@@ -25,6 +26,10 @@ export type Action =
   | { kind: 'drop'; piece: PieceType; to: Square }
   | { kind: 'teleport'; from: Square; to: Square }
   | { kind: 'endTurn' }
+  /** Card hand mode: keep the drawn power card for later and make a normal move now. */
+  | { kind: 'keep' }
+  /** Card hand mode: play a kept card instead of the one just drawn. */
+  | { kind: 'playKept'; card: CardType }
   | { kind: 'resign' };
 
 /** What is needed to take back a player's most recent action (Undo card). */
@@ -54,12 +59,27 @@ export type UndoRecord =
 export interface TurnLog {
   turn: number;
   color: Color;
+  /** The card drawn this turn. */
   card: CardType;
   actions: string[];
   note?: string;
+  /** Skip/Undo cards shuffled back because the king was in check. */
+  heldBack?: CardType[];
+  /** Checkmate mode: no normal move could save the king, so this draw was the last hope. */
+  lastChance?: boolean;
+  /** Card hand mode: the card that went into the hand this turn. */
+  kept?: CardType;
+  /** Card hand mode: the kept card played instead of the drawn one. */
+  played?: CardType;
 }
 
-export type ResultReason = 'king-captured' | 'resigned' | 'timeout' | 'turn-limit' | 'insufficient-material';
+export type ResultReason =
+  | 'king-captured'
+  | 'checkmate'
+  | 'resigned'
+  | 'timeout'
+  | 'turn-limit'
+  | 'insufficient-material';
 
 export interface GameResult {
   /** null means a draw. */
@@ -80,8 +100,24 @@ export type BoardEvent =
   | { kind: 'swap'; square: Square; before: Piece; after: Piece }
   | { kind: 'appear'; square: Square; piece: Piece };
 
+/**
+ * - capture: win by capturing the king; moves may leave your own king attacked.
+ * - checkmate: proper chess legality, win by checkmate (decided after the draw,
+ *   so a lucky card can still save a king that normal moves can't).
+ * - hand: like capture, but power cards can be kept and played on a later turn.
+ */
+export type GameMode = 'capture' | 'checkmate' | 'hand';
+
+/** Card hand mode: cards that can be kept, and how many a hand holds. */
+export const KEEPABLE: CardType[] = ['double', 'wild', 'teleport'];
+export const HAND_LIMIT = 3;
+
+/** Cards that end your turn without a move; never dealt while your king is in check. */
+const CURSED: CardType[] = ['skip', 'undo'];
+
 /** Optional rule variations, fixed when a game is created. */
 export interface GameRules {
+  mode: GameMode;
   /**
    * A Double Move ends as soon as the enemy king is attacked, so a king can
    * never be checked and captured in one turn without a chance to respond.
@@ -98,7 +134,7 @@ export interface TimeControl {
   incrementMs: number;
 }
 
-export const DEFAULT_RULES: GameRules = { checkEndsDoubleMove: true, timeControl: null };
+export const DEFAULT_RULES: GameRules = { mode: 'capture', checkEndsDoubleMove: true, timeControl: null };
 
 /**
  * Each side's remaining time. The side to move's clock has been running since
@@ -119,6 +155,10 @@ export interface GameState {
   movesMade: number;
   /** Pieces captured by each color, available to the Wild card. */
   inventory: Record<Color, PieceType[]>;
+  /** Card hand mode: kept cards (visible to both players). */
+  hands: Record<Color, CardType[]>;
+  /** Card hand mode: already kept or played a kept card this turn. */
+  handUsed: boolean;
   /** Remaining draw pile per player. Hidden from clients (see toView). */
   decks: Record<Color, CardType[]>;
   lastAction: Record<Color, UndoRecord | null>;
@@ -154,6 +194,8 @@ export function newGame(rng: Rng = Math.random, rules: GameRules = DEFAULT_RULES
     movesLeft: 0,
     movesMade: 0,
     inventory: { w: [], b: [] },
+    hands: { w: [], b: [] },
+    handUsed: false,
     decks: { w: shuffledDeck(rng), b: shuffledDeck(rng) },
     lastAction: { w: null, b: null },
     turnNumber: 1,
@@ -200,20 +242,27 @@ export function toView(state: GameState): GameView {
   return { ...rest, deckCounts: { w: countCards(decks.w), b: countCards(decks.b) } };
 }
 
-export type ActionContext = Pick<GameState, 'pos' | 'phase' | 'card' | 'movesMade' | 'inventory'>;
+export type ActionContext = Pick<
+  GameState,
+  'rules' | 'pos' | 'phase' | 'card' | 'movesMade' | 'inventory' | 'hands' | 'handUsed'
+>;
 
 export interface LegalActions {
   moves: Move[];
   drops: { piece: PieceType; to: Square }[];
   teleports: { from: Square; to: Square }[];
   canEndTurn: boolean;
+  /** Card hand mode: the drawn card can be kept. */
+  canKeep: boolean;
+  /** Card hand mode: kept cards that can be played now. */
+  playable: CardType[];
 }
 
 /** Piece types the Wild card can bring back (captured pawns and kings cannot). */
 export const droppable = (t: PieceType): boolean => t !== 'p' && t !== 'k';
 
 export function legalActions(ctx: ActionContext): LegalActions {
-  const none: LegalActions = { moves: [], drops: [], teleports: [], canEndTurn: false };
+  const none: LegalActions = { moves: [], drops: [], teleports: [], canEndTurn: false, canKeep: false, playable: [] };
   if (ctx.phase !== 'act') return none;
 
   const color = ctx.pos.turn;
@@ -243,12 +292,41 @@ export function legalActions(ctx: ActionContext): LegalActions {
     }
   }
 
+  if (ctx.rules.mode === 'checkmate') {
+    // Proper chess: nothing may leave your own king in check, and kings are never captured.
+    const safe = (b: Board) => {
+      const k = findKing(b, color);
+      return k < 0 || !isAttacked(b, k, opposite(color));
+    };
+    result.moves = result.moves.filter((m) => board[m.to]?.type !== 'k' && safe(applyMove(ctx.pos, m).pos.board));
+    result.drops = result.drops.filter((d) => {
+      const b = board.slice();
+      b[d.to] = { type: d.piece, color };
+      return safe(b);
+    });
+    result.teleports = result.teleports.filter((t) => {
+      const b = board.slice();
+      b[t.to] = b[t.from];
+      b[t.from] = null;
+      return safe(b);
+    });
+  }
+
+  const freshTurn = ctx.rules.mode === 'hand' && ctx.movesMade === 0 && !ctx.handUsed;
+  result.canKeep = freshTurn && !!ctx.card && KEEPABLE.includes(ctx.card) && ctx.hands[color].length < HAND_LIMIT;
+  result.playable = freshTurn ? [...new Set(ctx.hands[color])] : [];
   result.canEndTurn = ctx.card === 'double' && ctx.movesMade >= 1;
   return result;
 }
 
 export function hasAnyAction(a: LegalActions): boolean {
-  return a.moves.length > 0 || a.drops.length > 0 || a.teleports.length > 0;
+  return a.moves.length > 0 || a.drops.length > 0 || a.teleports.length > 0 || a.playable.length > 0;
+}
+
+/** Checkmate mode, before drawing: in check and no normal move helps, so only the card can. */
+export function isLastChance(ctx: ActionContext): boolean {
+  if (ctx.rules.mode !== 'checkmate' || ctx.phase !== 'draw' || !kingInDanger(ctx.pos, ctx.pos.turn)) return false;
+  return !hasAnyAction(legalActions({ ...ctx, phase: 'act', card: 'move', movesMade: 0, handUsed: true }));
 }
 
 /** Is `color`'s king currently attacked? (Shown as a warning; not enforced.) */
@@ -307,6 +385,14 @@ export function applyAction(
     case 'teleport':
       if (s.phase !== 'act') return fail('Draw a card first.');
       return doTeleport(s, action);
+
+    case 'keep':
+      if (s.phase !== 'act' || !legalActions(s).canKeep) return fail("You can't keep this card.");
+      return doKeep(s);
+
+    case 'playKept':
+      if (s.phase !== 'act' || !legalActions(s).playable.includes(action.card)) return fail("You can't play that card now.");
+      return doPlayKept(s, action.card);
   }
 }
 
@@ -316,23 +402,45 @@ function currentLog(s: GameState): TurnLog {
   return s.log[s.log.length - 1];
 }
 
+/**
+ * Take the top card of `color`'s deck. While the king is in check, Skip and
+ * Undo are shuffled back in (they would lose the game on the spot) and the
+ * next card is drawn instead.
+ */
+function takeCard(s: GameState, color: Color, rng: Rng, holdBackCursed: boolean) {
+  const deck = s.decks[color];
+  const heldBack: CardType[] = [];
+  for (;;) {
+    if (deck.length === 0 || (holdBackCursed && deck.every((c) => CURSED.includes(c)))) deck.push(...shuffledDeck(rng));
+    const card = deck.pop()!;
+    if (!holdBackCursed || !CURSED.includes(card)) return { card, heldBack };
+    heldBack.push(card);
+    // Anywhere except straight back on top.
+    deck.splice(Math.floor(rng() * deck.length), 0, card);
+  }
+}
+
 function drawCard(s: GameState, rng: Rng): void {
   const color = s.pos.turn;
-  if (s.decks[color].length === 0) s.decks[color] = shuffledDeck(rng);
-  const card = s.decks[color].pop()!;
+  const inCheck = kingInDanger(s.pos, color);
+  const lastChance = isLastChance(s);
+  const { card, heldBack } = takeCard(s, color, rng, inCheck);
 
   s.card = card;
-  s.log.push({ turn: s.turnNumber, color, card, actions: [] });
+  const entry: TurnLog = { turn: s.turnNumber, color, card, actions: [] };
+  if (heldBack.length) entry.heldBack = heldBack;
+  if (lastChance) entry.lastChance = true;
+  s.log.push(entry);
 
   if (card === 'skip') {
-    currentLog(s).note = 'Turn skipped.';
+    entry.note = 'Turn skipped.';
     endTurn(s);
     return;
   }
 
   if (card === 'undo') {
     const undone = undoLastAction(s, color);
-    currentLog(s).note = undone ? `Took back ${undone}.` : 'Nothing to take back.';
+    entry.note = undone ? `Took back ${undone}.` : 'Nothing to take back.';
     endTurn(s);
     return;
   }
@@ -342,9 +450,52 @@ function drawCard(s: GameState, rng: Rng): void {
   s.movesMade = 0;
 
   if (!hasAnyAction(legalActions(s))) {
+    if (s.rules.mode === 'checkmate' && inCheck) {
+      entry.note = 'Checkmate!';
+      finish(s, { winner: opposite(color), reason: 'checkmate' });
+      return;
+    }
+    entry.note = 'No legal moves.';
+    endTurn(s);
+    return;
+  }
+  if (lastChance) entry.note = `Saved by the ${CARDS[card].name}!`;
+}
+
+function doKeep(s: GameState): ActionResult {
+  const color = s.pos.turn;
+  const kept = s.card!;
+  s.hands[color].push(kept);
+  s.card = 'move';
+  s.movesLeft = 1;
+  s.handUsed = true;
+  currentLog(s).kept = kept;
+  if (!hasAnyAction(legalActions(s))) {
     currentLog(s).note = 'No legal moves.';
     endTurn(s);
   }
+  return { ok: true, state: s };
+}
+
+function doPlayKept(s: GameState, card: CardType): ActionResult {
+  const color = s.pos.turn;
+  const hand = s.hands[color];
+  hand.splice(hand.indexOf(card), 1);
+  // A drawn power card swaps into the hand; a drawn Move card is simply set aside.
+  const drawn = s.card!;
+  if (KEEPABLE.includes(drawn)) {
+    hand.push(drawn);
+    currentLog(s).kept = drawn;
+  }
+  s.card = card;
+  s.movesLeft = card === 'double' ? 2 : 1;
+  s.handUsed = true;
+  currentLog(s).played = card;
+  if (!hasAnyAction(legalActions(s))) {
+    currentLog(s).note = 'No legal moves.';
+    endTurn(s);
+  }
+  return { ok: true, state: s };
 }
 
 function moveText(r: ReturnType<typeof applyMove>, move: Move): string {
@@ -364,10 +515,13 @@ function doMove(s: GameState, action: Extract<Action, { kind: 'move' }>): Action
   else promotion = undefined;
 
   const move: Move = { from: action.from, to: action.to, promotion };
-  const legal = generateMoves(s.pos, color).some(
+  const legal = legalActions(s).moves.some(
     (m) => m.from === move.from && m.to === move.to && (m.promotion ?? null) === (move.promotion ?? null),
   );
-  if (!legal) return fail('That move is not allowed.');
+  if (!legal) {
+    const intoCheck = s.rules.mode === 'checkmate' && generateMoves(s.pos, color).some((m) => m.from === move.from && m.to === move.to);
+    return fail(intoCheck ? 'That would leave your king in check.' : 'That move is not allowed.');
+  }
 
   const prevCastling = { ...s.pos.castling[color] };
   const r = applyMove(s.pos, move, true);
@@ -478,6 +632,7 @@ function endTurn(s: GameState): void {
   s.card = null;
   s.movesLeft = 0;
   s.movesMade = 0;
+  s.handUsed = false;
   s.turnNumber++;
 
   const onlyKings = s.pos.board.every((p) => !p || p.type === 'k');
@@ -497,6 +652,18 @@ const samePiece = (p: Piece | null | undefined, q: Piece): boolean =>
  * or null when there is nothing that can be taken back.
  */
 function undoLastAction(s: GameState, color: Color): string | null {
+  const before = structuredClone({ pos: s.pos, inventory: s.inventory, events: s.events, highlight: s.highlight });
+  const undone = reverseLastAction(s, color);
+  // In checkmate mode a take-back may not leave your own king in check.
+  if (undone && s.rules.mode === 'checkmate' && kingInDanger(s.pos, color)) {
+    Object.assign(s, before);
+    return null;
+  }
+  if (undone) s.lastAction[color] = null;
+  return undone;
+}
+
+function reverseLastAction(s: GameState, color: Color): string | null {
   const rec = s.lastAction[color];
   if (!rec) return null;
   const b = s.pos.board;
@@ -545,7 +712,6 @@ function undoLastAction(s: GameState, color: Color): string | null {
     }
   }
 
-  s.lastAction[color] = null;
   return rec.text;
 }
 
@@ -559,6 +725,7 @@ export function describeResult(result: GameResult, names: Record<Color, string>)
   const loser = names[opposite(result.winner)];
   if (result.reason === 'resigned') return `${winner} wins: ${loser} resigned.`;
   if (result.reason === 'timeout') return `${winner} wins on time: ${loser} ran out.`;
+  if (result.reason === 'checkmate') return `${winner} wins by checkmate!`;
   return `${winner} wins by capturing the king!`;
 }
 

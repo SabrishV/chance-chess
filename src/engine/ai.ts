@@ -17,8 +17,8 @@ import {
   findKing,
 } from './board';
 import { type Move, applyMove, generateMoves, isAttacked } from './moves';
-import { type Action, type ActionContext, type GameRules, kingInDanger, legalActions } from './game';
-import type { Rng } from './cards';
+import { type Action, type ActionContext, kingInDanger, legalActions } from './game';
+import type { CardType, Rng } from './cards';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -164,32 +164,56 @@ function shuffle<T>(items: T[], rng: Rng): T[] {
   return items;
 }
 
+/** Card hand mode: roughly how much (in centipawns) a kept card is worth holding on to. */
+const HOLD_VALUE: Partial<Record<CardType, number>> = { double: 70, teleport: 60, wild: 45 };
+const holdValue = (c: CardType | null) => (c ? (HOLD_VALUE[c] ?? 0) : 0);
+
+type ChooseContext = ActionContext & { movesLeft: number };
+
 /**
  * Pick the computer's next action. Call repeatedly: it returns one action at a
- * time (draw, then each move of the turn).
+ * time (draw, then each move of the turn, and in card hand mode possibly
+ * keeping or playing a card first).
  */
-export function chooseAction(
-  ctx: ActionContext & { movesLeft: number; rules: GameRules },
-  difficulty: Difficulty,
-  rng: Rng = Math.random,
-): Action {
+export function chooseAction(ctx: ChooseContext, difficulty: Difficulty, rng: Rng = Math.random): Action {
   if (ctx.phase === 'draw') return { kind: 'draw' };
 
+  const legal = legalActions(ctx);
+  if (!legal.canKeep && legal.playable.length === 0) return bestPlay(ctx, difficulty, rng).action;
+
+  // Card hand mode: compare playing the drawn card, keeping it (and making a
+  // normal move), and playing each kept card instead.
+  const options: { action: Action; score: number }[] = [bestPlay(ctx, difficulty, rng)];
+  if (legal.canKeep) {
+    const asMove = bestPlay({ ...ctx, card: 'move', movesLeft: 1, handUsed: true }, difficulty, rng);
+    options.push({ action: { kind: 'keep' }, score: asMove.score + holdValue(ctx.card) });
+  }
+  for (const card of legal.playable) {
+    const played = bestPlay({ ...ctx, card, movesLeft: card === 'double' ? 2 : 1, handUsed: true }, difficulty, rng);
+    const swappedIn = ctx.card && ctx.card !== 'move' ? holdValue(ctx.card) : 0;
+    options.push({ action: { kind: 'playKept', card }, score: played.score - holdValue(card) + swappedIn });
+  }
+  return options.reduce((a, b) => (b.score > a.score ? b : a)).action;
+}
+
+/** The best action with the card currently in play, and its score. */
+function bestPlay(ctx: ChooseContext, difficulty: Difficulty, rng: Rng): { action: Action; score: number } {
   const settings = DIFFICULTIES[difficulty];
   const me = ctx.pos.turn;
   const candidates = shuffle(rootCandidates(ctx), rng);
-  if (candidates.length === 0) return { kind: 'endTurn' };
+  if (candidates.length === 0) return { action: { kind: 'endTurn' }, score: -Infinity };
 
-  // Capturing the king wins on the spot.
+  // Capturing the king wins on the spot (never offered in checkmate mode).
   const winning = candidates.find(
     (c) => c.action.kind === 'move' && ctx.pos.board[c.action.to]?.type === 'k',
   );
-  if (winning) return winning.action;
+  if (winning) return { action: winning.action, score: WIN };
 
   // Big root sets (teleport, first half of a double move) get a shallower search.
   const extraMove = ctx.movesLeft > 1;
   const depth = candidates.length > 120 || extraMove ? Math.max(1, settings.depth - 1) : settings.depth;
   const search = new Search(settings.quiescence);
+  const kingsCanBeTaken = ctx.rules.mode !== 'checkmate';
 
   const opponentToMove = (pos: Position): Position => ({ ...pos, turn: opposite(me) });
 
@@ -201,7 +225,10 @@ export function chooseAction(
     let best = afterTurn(pos, alpha);
     if (ctx.rules.checkEndsDoubleMove && kingInDanger(pos, opposite(me))) return best;
     for (const m of orderMoves(pos, generateMoves(pos, me))) {
-      if (capturesKing(pos, m)) return WIN;
+      if (capturesKing(pos, m)) {
+        if (kingsCanBeTaken) return WIN;
+        continue;
+      }
       const score = afterTurn(applyMove(pos, m, true).pos, Math.max(alpha, best));
       if (score > best) best = score;
     }
@@ -220,5 +247,5 @@ export function chooseAction(
       bestAction = c.action;
     }
   }
-  return bestAction;
+  return { action: bestAction, score: bestScore };
 }

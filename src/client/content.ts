@@ -1,5 +1,22 @@
 // Page copy shared by the home page and the build-time pre-render (FAQ structured data).
 
+import type { GameMode } from '../engine';
+
+export const MODES: Record<GameMode, { label: string; blurb: string }> = {
+  capture: {
+    label: 'Capture the king',
+    blurb: 'No checkmate: take the enemy king to win. Leave yours exposed and one lucky card can finish you.',
+  },
+  checkmate: {
+    label: 'Checkmate',
+    blurb: 'Real chess rules: no moving into check, win by checkmate. A lucky last-chance card can still save a lost king.',
+  },
+  hand: {
+    label: 'Card hand',
+    blurb: 'Keep up to 3 power cards and play them when it suits you. Win by capturing the king.',
+  },
+};
+
 export const AUTHOR = { name: 'Sabrish Varadharajan', url: 'https://sabrish.vercel.app/' };
 
 export const FAQ: { q: string; a: string }[] = [
@@ -9,7 +26,7 @@ export const FAQ: { q: string; a: string }[] = [
   },
   {
     q: 'How do you win a game of Chance Chess?',
-    a: "By capturing the enemy king. There is no checkmate, so you're allowed to leave your king under attack, but a lucky card for your opponent (or an unlucky one for you) can end the game on the spot.",
+    a: "In the classic mode, by capturing the enemy king: there is no checkmate, so you may leave your king under attack, but a lucky card for your opponent can end the game on the spot. In Checkmate mode you win by checkmate, with real chess rules, though a lucky last-chance card can still save a lost king. Card hand mode lets you keep power cards to play when you choose.",
   },
   {
     q: 'Can I play Chance Chess with friends online?',

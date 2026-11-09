@@ -22,7 +22,9 @@ export type SoundName =
   | 'turn'
   | 'chat'
   | 'tick'
-  | 'error';
+  | 'error'
+  | 'heartbeat'
+  | 'saved';
 
 type Voice = (ctx: BaseAudioContext, out: AudioNode, t: number) => void;
 
@@ -194,6 +196,15 @@ export const SOUNDS: Record<SoundName, Voice> = {
   // Double blip.
   chat: arpeggio([81, 86], 0.07, { decay: 0.06, gain: 0.12 }),
   tick: (ctx, out, t) => tone(ctx, out, t, { freq: 1050, type: 'square', decay: 0.025, gain: 0.07, cutoff: 3000 }),
+  // Checkmate mode last-chance draw: a heartbeat while the card hovers, then relief.
+  heartbeat: (ctx, out, t) => {
+    tone(ctx, out, t, { freq: 62, to: 44, decay: 0.12, gain: 0.55 });
+    tone(ctx, out, t + 0.2, { freq: 56, to: 40, decay: 0.14, gain: 0.4 });
+  },
+  saved: (ctx, out, t) => {
+    arpeggio([72, 79, 84, 91], 0.06, { type: 'triangle', decay: 0.3, gain: 0.15 })(ctx, out, t);
+    noise(ctx, out, t + 0.18, { filter: 'highpass', freq: 6000, q: 0.5, attack: 0.01, decay: 0.3, gain: 0.08 });
+  },
   error: (ctx, out, t) => {
     tone(ctx, out, t, { freq: 150, type: 'square', decay: 0.13, gain: 0.08, cutoff: 900 });
     tone(ctx, out, t, { freq: 142, type: 'square', decay: 0.13, gain: 0.08, cutoff: 900 });

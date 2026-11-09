@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { type Color, type GameRules, type TimeControl, CARD_ORDER, DECK_COMPOSITION, DEFAULT_RULES } from '../../engine';
+import { type Color, type GameMode, type GameRules, type TimeControl, CARD_ORDER, DECK_COMPOSITION, DEFAULT_RULES } from '../../engine';
 import { DIFFICULTIES, type Difficulty } from '../../engine/ai';
 import { ROOM_CODE_PATTERN, type SeatChoice } from '../../shared/protocol';
 import { Card } from './Cards';
-import { AUTHOR, FAQ } from '../content';
+import { AUTHOR, FAQ, MODES } from '../content';
 import { CardGallery } from './Panels';
 
 export type StartRequest =
@@ -61,8 +61,9 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
   const [code, setCode] = useState('');
   const [checkEndsDouble, setCheckEndsDouble] = useState(DEFAULT_RULES.checkEndsDoubleMove);
   const [clock, setClock] = useState('off');
+  const [mode, setMode] = useState<GameMode>(DEFAULT_RULES.mode);
 
-  const rules: GameRules = { checkEndsDoubleMove: checkEndsDouble, timeControl: CLOCKS[clock].tc };
+  const rules: GameRules = { mode, checkEndsDoubleMove: checkEndsDouble, timeControl: CLOCKS[clock].tc };
   const cleanCode = code.trim().toUpperCase();
   const pickSeat = (s: SeatChoice): Color => (s === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : s);
   const deckSize = CARD_ORDER.reduce((n, c) => n + DECK_COMPOSITION[c], 0);
@@ -115,6 +116,16 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
               />
             </div>
           </div>
+        </div>
+        <div className="mode-picker">
+          <span className="mode-picker-label">Game mode</span>
+          <Segmented
+            label="Game mode"
+            value={mode}
+            onChange={setMode}
+            options={(Object.keys(MODES) as GameMode[]).map((m) => [m, MODES[m].label])}
+          />
+          <p className="mode-blurb">{MODES[mode].blurb}</p>
         </div>
         <div className="modes">
           <article className="mode mode-ai">
@@ -191,6 +202,18 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
             <p>There's no checkmate: you win by taking the king. Leave yours exposed and one lucky card can finish you.</p>
           </li>
         </ol>
+
+        <h3 className="gallery-title">Game modes</h3>
+        <ul className="mode-list">
+          {(Object.keys(MODES) as GameMode[]).map((m) => (
+            <li key={m}>
+              <b>{MODES[m].label}.</b> {MODES[m].blurb}
+            </li>
+          ))}
+        </ul>
+        <p className="muted small">
+          In every mode, Skip and Undo are never dealt while your king is in check: they're shuffled back into your deck.
+        </p>
 
         <h3 className="gallery-title">The cards</h3>
         <CardGallery />

@@ -12,14 +12,28 @@ export interface Reveal {
   note?: string;
   /** How long the reveal stays up, in ms. */
   duration: number;
+  /** Checkmate mode: the drawer's only hope; the card hovers before flipping. */
+  lastChance?: { saved: boolean };
 }
 
 /** A big card dealt face up over the board after every draw. */
 export function CardReveal({ reveal }: { reveal: Reveal }) {
   return (
-    <div className="reveal" key={reveal.id} aria-live="polite" style={{ animationDuration: `${reveal.duration}ms` }}>
+    <div
+      className={`reveal ${reveal.lastChance ? 'last-chance' : ''}`}
+      key={reveal.id}
+      aria-live="polite"
+      style={{ animationDuration: `${reveal.duration}ms` }}
+    >
       <div className="reveal-caption">{reveal.caption}</div>
-      <DealtCard card={reveal.card} size="xl" stamp />
+      <DealtCard
+        card={reveal.card}
+        size="xl"
+        stamp
+        suspense={!!reveal.lastChance}
+        stampText={reveal.lastChance ? (reveal.lastChance.saved ? 'Saved!' : 'Checkmate!') : undefined}
+        stampTone={reveal.lastChance ? (reveal.lastChance.saved ? 'gold' : 'red') : undefined}
+      />
       {reveal.note && <div className="reveal-note">{reveal.note}</div>}
     </div>
   );
