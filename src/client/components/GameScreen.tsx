@@ -239,7 +239,9 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
 
   const me = myColors.length === 1 ? myColors[0] : null;
   const turnName = names[view.pos.turn];
-  const checkmateMode = view.rules.mode === 'checkmate';
+  // Rooms from an older game server have no mode: treat them as the classic one.
+  const gameMode = view.rules.mode ?? 'capture';
+  const checkmateMode = gameMode === 'checkmate';
   const lastChance = canAct && isLastChance(view);
   // Skip and Undo are held back while in check, so only the rest of the deck counts.
   const deck = view.deckCounts[view.pos.turn];
@@ -284,8 +286,8 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
             Chance <b>Chess</b>
           </span>
         </button>
-        <span className="mode-chip" title={MODES[view.rules.mode].blurb}>
-          {MODES[view.rules.mode].label}
+        <span className="mode-chip" title={MODES[gameMode].blurb}>
+          {MODES[gameMode].label}
         </span>
         {roomCode && (
           <button className="room-chip" type="button" onClick={copyLink} title="Copy invite link">
