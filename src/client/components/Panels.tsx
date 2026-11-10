@@ -86,11 +86,13 @@ export function PlayerBar({
 }
 
 function cardHint(view: GameView, legal: LegalActions): string {
+  if (!legal.moves.length && !legal.drops.length && !legal.teleports.length && legal.playable.length) {
+    return 'No legal move with this card: play a kept card instead!';
+  }
   switch (view.card) {
     case 'double':
-      return view.movesMade === 0
-        ? 'Make your first move. Giving check ends the turn.'
-        : 'Make a second move, or end your turn.';
+      if (view.movesMade > 0) return 'Make a second move, or end your turn.';
+      return view.rules.checkEndsDoubleMove ? 'Make your first move. Giving check ends the turn.' : 'Make your first move.';
     case 'wild':
       if (legal.drops.length) return 'Tap a captured piece below, then one of your pawns to swap it in. Or just move.';
       return 'Nothing to swap in yet (you need a captured piece and a pawn), so make a normal move.';

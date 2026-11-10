@@ -90,6 +90,7 @@ export class GameRoom extends Server<Env> {
       this.room.lastActivity ??= Date.now();
       this.room.state.clock ??= null;
       this.room.state.rules.mode ??= 'capture';
+      this.room.state.rules.noCursedInCheck ??= false;
       this.room.state.hands ??= { w: [], b: [] };
       this.room.state.handUsed ??= false;
     }
@@ -149,6 +150,7 @@ export class GameRoom extends Server<Env> {
       const gameRules: GameRules = {
         mode: rules?.mode === 'checkmate' || rules?.mode === 'hand' ? rules.mode : 'capture',
         checkEndsDoubleMove: rules?.checkEndsDoubleMove ?? DEFAULT_RULES.checkEndsDoubleMove,
+        noCursedInCheck: rules?.noCursedInCheck ?? DEFAULT_RULES.noCursedInCheck,
         timeControl: cleanTimeControl(rules?.timeControl),
       };
       this.room = {

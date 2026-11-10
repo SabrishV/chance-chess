@@ -11,6 +11,7 @@ import {
   kingInDanger,
   legalActions,
   opposite,
+  winsByCheckmate,
 } from '../../engine';
 import { MODES } from '../content';
 import type { GameController } from '../controllers';
@@ -241,7 +242,7 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
   const turnName = names[view.pos.turn];
   // Rooms from an older game server have no mode: treat them as the classic one.
   const gameMode = view.rules.mode ?? 'capture';
-  const checkmateMode = gameMode === 'checkmate';
+  const checkmateMode = winsByCheckmate({ ...view.rules, mode: gameMode });
   const lastChance = canAct && isLastChance(view);
   // Skip and Undo are held back while in check, so only the rest of the deck counts.
   const deck = view.deckCounts[view.pos.turn];

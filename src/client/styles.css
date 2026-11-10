@@ -2079,21 +2079,54 @@ a {
 }
 .toggle {
   display: flex;
-  gap: 10px;
+  gap: 14px;
   align-items: flex-start;
-  margin-top: 30px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
   background: var(--panel);
   border: 1px solid var(--line);
   cursor: pointer;
 }
+/* A switch rather than a tick box. */
 .toggle input {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  margin: 2px 0 0;
+  border-radius: 99px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  cursor: inherit;
+  transition: background 0.2s ease;
+}
+.toggle input::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
   width: 20px;
   height: 20px;
-  margin-top: 2px;
-  accent-color: var(--pink);
-  flex-shrink: 0;
+  border-radius: 50%;
+  background: #d8d8de;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transition: transform 0.25s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.toggle input:checked {
+  background: var(--pink);
+  border-color: transparent;
+}
+.toggle input:checked::before {
+  transform: translateX(18px);
+  background: #fff;
+}
+.toggle input:disabled {
+  opacity: 0.55;
+}
+.toggle input:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
 }
 
 .faq {
@@ -2358,36 +2391,203 @@ a {
    Game modes: picker, last chance (checkmate), card hand
    ========================================================================== */
 
-.mode-picker {
-  margin: -4px 0 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.mode-picker-label {
+.play-label {
+  margin: 26px 0 10px;
   font-family: var(--font-display);
-  font-size: 0.8rem;
+  font-size: 0.95rem;
+  font-weight: 600;
   color: var(--muted);
 }
-.mode-picker .segmented {
-  max-width: 560px;
+.play-head + .play-label {
+  margin-top: 0;
 }
-.mode-blurb {
-  margin: 2px 0 0;
+
+/* Game mode cards: the same cards as the ways to play, picked like radio buttons. */
+.game-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.gm-capture {
+  --accent: var(--red);
+}
+.gm-checkmate {
+  --accent: var(--violet);
+}
+.gm-hand {
+  --accent: var(--lime);
+}
+.game-mode {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background:
+    linear-gradient(180deg, #26272c, #1d1e22) padding-box,
+    linear-gradient(160deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05) 55%) border-box;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.game-mode:not(.on) .mode-icon {
+  filter: saturate(0.35) brightness(0.8);
+}
+.game-mode.on {
+  background:
+    linear-gradient(180deg, #2a2b31, #1f2025) padding-box,
+    linear-gradient(160deg, var(--accent), rgba(255, 255, 255, 0.08) 60%) border-box;
+  box-shadow:
+    var(--shadow),
+    0 0 28px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.game-mode:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.gm-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.4rem;
+  line-height: 1.15;
+}
+.gm-blurb {
+  color: var(--muted);
+}
+.gm-check {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--line);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+.gm-check svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: #1a1a1e;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity 0.2s ease,
+    transform 0.25s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.game-mode.on .gm-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.game-mode.on .gm-check svg {
+  opacity: 1;
+  transform: none;
+}
+
+/* House rules: two switches side by side. */
+.house-rules {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+.house-rules .toggle {
+  margin: 0;
+}
+.toggle b {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.toggle span {
   color: var(--muted);
   font-size: 0.92rem;
 }
-.mode-list {
-  margin: 0 0 8px;
-  padding-left: 20px;
+.toggle em {
+  color: var(--violet);
+  font-style: normal;
+}
+.toggle.disabled {
+  cursor: default;
+}
+
+/* How to play: one panel per game mode. */
+.mode-rules {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.mode-rules li {
+  padding: 22px 20px 20px;
+  border-radius: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+}
+.mode-rules h4 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  margin: 12px 0 6px;
+}
+.mode-rules p {
+  margin: 0;
   color: var(--muted);
 }
-.mode-list li {
-  margin: 6px 0;
+.mode-rules .mode-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
 }
-.mode-list b {
-  color: var(--text);
+.mode-rules .mode-icon svg {
+  width: 26px;
+  height: 26px;
 }
+
+@media (max-width: 760px) {
+  .game-modes,
+  .house-rules,
+  .mode-rules {
+    grid-template-columns: 1fr;
+  }
+  /* Compact mode cards on phones: icon beside the text. */
+  .game-mode {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 14px;
+    row-gap: 4px;
+    padding: 16px 52px 16px 16px;
+  }
+  .game-mode .mode-icon {
+    grid-row: span 2;
+    width: 46px;
+    height: 46px;
+  }
+  .game-mode .gm-title {
+    font-size: 1.15rem;
+    align-self: end;
+  }
+  .game-mode .gm-blurb {
+    font-size: 0.9rem;
+  }
+  .gm-check {
+    top: 50%;
+    right: 14px;
+    width: 26px;
+    height: 26px;
+    margin-top: -13px;
+  }
+}
+
 .mode-chip {
   padding: 4px 10px;
   border-radius: 99px;

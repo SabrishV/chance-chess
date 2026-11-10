@@ -307,6 +307,22 @@ describe('cursed cards while in check', () => {
     expect(s.pos.turn).toBe('b');
     expect(s.log.at(-1)?.heldBack).toBeUndefined();
   });
+
+  it('deals Skip in check when the house rule is off', () => {
+    const g = riggedGame({ w: ['skip', 'move'] }, CHECK);
+    g.rules.noCursedInCheck = false;
+    const s = play(g, ['w', draw]);
+    expect(s.pos.turn).toBe('b');
+    expect(s.log.at(-1)?.heldBack).toBeUndefined();
+  });
+
+  it('always holds curses back in checkmate mode', () => {
+    const g = riggedGame({ w: ['skip', 'move'] }, CHECK, 'checkmate');
+    g.rules.noCursedInCheck = false;
+    const s = play(g, ['w', draw]);
+    expect(s.card).toBe('move');
+    expect(s.log.at(-1)?.heldBack).toEqual(['skip']);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -425,6 +441,42 @@ describe('card hand mode', () => {
     const g = riggedGame({}, undefined, 'hand');
     g.hands.b = ['double'];
     expect(toView(g).hands.b).toEqual(['double']);
+  });
+
+  describe('plays to checkmate', () => {
+    // Back-rank mate: white king h1 boxed in by its own pawns, black rook on a1.
+    const MATED = '6k1/8/8/8/8/8/6PP/r6K';
+
+    it('does not allow moving into check', () => {
+      const s = play(riggedGame({ w: ['move'] }, '4k3/8/8/8/8/8/r7/4K3', 'hand'), ['w', draw]);
+      expect(applyAction(s, mv('e1', 'e2'), 'w').ok).toBe(false);
+    });
+
+    it('is checkmate when neither the drawn card nor the hand can save the king', () => {
+      const g = riggedGame({ w: ['move'] }, MATED, 'hand');
+      g.hands.w = ['double'];
+      expect(isLastChance(g)).toBe(true);
+      const s = play(g, ['w', draw]);
+      expect(s.result).toEqual({ winner: 'b', reason: 'checkmate' });
+    });
+
+    it('a kept Teleport gets the king out', () => {
+      const g = riggedGame({ w: ['move'] }, MATED, 'hand');
+      g.hands.w = ['teleport'];
+      expect(isLastChance(g)).toBe(false);
+      let s = play(g, ['w', draw]);
+      expect(s.result).toBeNull();
+      expect(legalActions(s).playable).toEqual(['teleport']);
+      s = play(s, ['w', { kind: 'playKept', card: 'teleport' }]);
+      s = play(s, ['w', { kind: 'teleport', ...legalActions(s).teleports[0] }]);
+      expect(s.pos.turn).toBe('b');
+    });
+
+    it('cannot keep a card when no normal move gets out of check', () => {
+      const s = play(riggedGame({ w: ['teleport'] }, MATED, 'hand'), ['w', draw]);
+      expect(legalActions(s).canKeep).toBe(false);
+      expect(legalActions(s).teleports.length).toBeGreaterThan(0);
+    });
   });
 });
 

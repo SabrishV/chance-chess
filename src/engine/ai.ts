@@ -17,7 +17,7 @@ import {
   findKing,
 } from './board';
 import { type Move, applyMove, generateMoves, isAttacked } from './moves';
-import { type Action, type ActionContext, kingInDanger, legalActions } from './game';
+import { type Action, type ActionContext, kingInDanger, legalActions, winsByCheckmate } from './game';
 import type { CardType, Rng } from './cards';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
@@ -203,7 +203,7 @@ function bestPlay(ctx: ChooseContext, difficulty: Difficulty, rng: Rng): { actio
   const candidates = shuffle(rootCandidates(ctx), rng);
   if (candidates.length === 0) return { action: { kind: 'endTurn' }, score: -Infinity };
 
-  // Capturing the king wins on the spot (never offered in checkmate mode).
+  // Capturing the king wins on the spot (never offered when playing to checkmate).
   const winning = candidates.find(
     (c) => c.action.kind === 'move' && ctx.pos.board[c.action.to]?.type === 'k',
   );
@@ -213,7 +213,7 @@ function bestPlay(ctx: ChooseContext, difficulty: Difficulty, rng: Rng): { actio
   const extraMove = ctx.movesLeft > 1;
   const depth = candidates.length > 120 || extraMove ? Math.max(1, settings.depth - 1) : settings.depth;
   const search = new Search(settings.quiescence);
-  const kingsCanBeTaken = ctx.rules.mode !== 'checkmate';
+  const kingsCanBeTaken = !winsByCheckmate(ctx.rules);
 
   const opponentToMove = (pos: Position): Position => ({ ...pos, turn: opposite(me) });
 

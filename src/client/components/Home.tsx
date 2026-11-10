@@ -1,5 +1,14 @@
-import { useState } from 'react';
-import { type Color, type GameMode, type GameRules, type TimeControl, CARD_ORDER, DECK_COMPOSITION, DEFAULT_RULES } from '../../engine';
+import { type ReactNode, useState } from 'react';
+import {
+  type Color,
+  type GameMode,
+  type GameRules,
+  type TimeControl,
+  CARD_ORDER,
+  DECK_COMPOSITION,
+  DEFAULT_RULES,
+  cursedHeldBack,
+} from '../../engine';
 import { DIFFICULTIES, type Difficulty } from '../../engine/ai';
 import { ROOM_CODE_PATTERN, type SeatChoice } from '../../shared/protocol';
 import { Card } from './Cards';
@@ -53,6 +62,54 @@ const SEATS: [SeatChoice, string][] = [
   ['b', 'Black'],
 ];
 
+const GAME_MODES = Object.keys(MODES) as GameMode[];
+
+const MODE_ICONS: Record<GameMode, ReactNode> = {
+  // A crown.
+  capture: <path d="M4 17.5L2.8 8l5 3.8L12 5l4.2 6.8 5-3.8L20 17.5zM4.5 20.5h15" />,
+  // "#", the notation for checkmate.
+  checkmate: <path d="M10 4L8 20M16 4l-2 16M4.5 9h15.5M4 15h15.5" />,
+  // Two cards held in a fan.
+  hand: (
+    <>
+      <rect x="9.5" y="3.5" width="10" height="14" rx="2" transform="rotate(10 14.5 10.5)" />
+      <path d="M8.2 6.6L5.6 7.1a2 2 0 0 0-1.6 2.3l1.8 10.1a2 2 0 0 0 2.3 1.6l5.3-.9" />
+    </>
+  ),
+};
+
+function ModeIcon({ mode }: { mode: GameMode }) {
+  return (
+    <span className="mode-icon" aria-hidden>
+      <svg viewBox="0 0 24 24">{MODE_ICONS[mode]}</svg>
+    </span>
+  );
+}
+
+function Toggle({
+  checked,
+  onChange,
+  disabled = false,
+  title,
+  children,
+}: {
+  checked: boolean;
+  onChange: (on: boolean) => void;
+  disabled?: boolean;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className={`toggle ${disabled ? 'disabled' : ''}`}>
+      <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        <b>{title}</b>
+        {children}
+      </span>
+    </label>
+  );
+}
+
 
 export function Home({ name, onNameChange, onStart }: HomeProps) {
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
@@ -60,10 +117,12 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
   const [onlineSeat, setOnlineSeat] = useState<SeatChoice>('random');
   const [code, setCode] = useState('');
   const [checkEndsDouble, setCheckEndsDouble] = useState(DEFAULT_RULES.checkEndsDoubleMove);
+  const [noCursedInCheck, setNoCursedInCheck] = useState(DEFAULT_RULES.noCursedInCheck);
   const [clock, setClock] = useState('off');
   const [mode, setMode] = useState<GameMode>(DEFAULT_RULES.mode);
 
-  const rules: GameRules = { mode, checkEndsDoubleMove: checkEndsDouble, timeControl: CLOCKS[clock].tc };
+  const rules: GameRules = { mode, checkEndsDoubleMove: checkEndsDouble, noCursedInCheck, timeControl: CLOCKS[clock].tc };
+  const curseRuleLocked = cursedHeldBack({ ...rules, noCursedInCheck: false });
   const cleanCode = code.trim().toUpperCase();
   const pickSeat = (s: SeatChoice): Color => (s === 'random' ? (Math.random() < 0.5 ? 'w' : 'b') : s);
   const deckSize = CARD_ORDER.reduce((n, c) => n + DECK_COMPOSITION[c], 0);
@@ -117,16 +176,28 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
             </div>
           </div>
         </div>
-        <div className="mode-picker">
-          <span className="mode-picker-label">Game mode</span>
-          <Segmented
-            label="Game mode"
-            value={mode}
-            onChange={setMode}
-            options={(Object.keys(MODES) as GameMode[]).map((m) => [m, MODES[m].label])}
-          />
-          <p className="mode-blurb">{MODES[mode].blurb}</p>
+        <div className="play-label">Game mode</div>
+        <div className="game-modes" role="radiogroup" aria-label="Game mode">
+          {GAME_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={mode === m}
+              className={`mode game-mode gm-${m} ${mode === m ? 'on' : ''}`}
+              onClick={() => setMode(m)}
+            >
+              <span className="gm-check" aria-hidden>
+                <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+              </span>
+              <ModeIcon mode={m} />
+              <span className="gm-title">{MODES[m].label}</span>
+              <span className="gm-blurb">{MODES[m].blurb}</span>
+            </button>
+          ))}
         </div>
+
+        <div className="play-label">Play</div>
         <div className="modes">
           <article className="mode mode-ai">
             <div className="mode-icon" aria-hidden>
@@ -181,6 +252,22 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
             </button>
           </article>
         </div>
+
+        <div className="play-label">House rules</div>
+        <div className="house-rules">
+          <Toggle title="Check ends a Double Move" checked={checkEndsDouble} onChange={setCheckEndsDouble}>
+            Giving check ends your Double Move, so a king can't be checked and captured in one turn.
+          </Toggle>
+          <Toggle
+            title="No curses in check"
+            checked={noCursedInCheck || curseRuleLocked}
+            disabled={curseRuleLocked}
+            onChange={setNoCursedInCheck}
+          >
+            Skip and Undo are never dealt while your king is in check: they're shuffled back into your deck.
+            {curseRuleLocked && <em> Always on in {MODES[mode].label} mode.</em>}
+          </Toggle>
+        </div>
       </section>
 
       <section className="how" id="how-to-play" aria-labelledby="how-title">
@@ -198,32 +285,24 @@ export function Home({ name, onNameChange, onStart }: HomeProps) {
           </li>
           <li>
             <span className="step-num">3</span>
-            <h3>Capture the king</h3>
-            <p>There's no checkmate: you win by taking the king. Leave yours exposed and one lucky card can finish you.</p>
+            <h3>Win your way</h3>
+            <p>Capture the enemy king, or checkmate it with real chess rules. In Card hand mode you can also save power cards for later. You pick the game mode before you start.</p>
           </li>
         </ol>
 
         <h3 className="gallery-title">Game modes</h3>
-        <ul className="mode-list">
-          {(Object.keys(MODES) as GameMode[]).map((m) => (
-            <li key={m}>
-              <b>{MODES[m].label}.</b> {MODES[m].blurb}
+        <ul className="mode-rules">
+          {GAME_MODES.map((m) => (
+            <li key={m} className={`gm-${m}`}>
+              <ModeIcon mode={m} />
+              <h4>{MODES[m].label}</h4>
+              <p>{MODES[m].rules}</p>
             </li>
           ))}
         </ul>
-        <p className="muted small">
-          In every mode, Skip and Undo are never dealt while your king is in check: they're shuffled back into your deck.
-        </p>
 
         <h3 className="gallery-title">The cards</h3>
         <CardGallery />
-
-        <label className="toggle">
-          <input type="checkbox" checked={checkEndsDouble} onChange={(e) => setCheckEndsDouble(e.target.checked)} />
-          <span>
-            <b>House rule:</b> giving check ends a Double Move, so a king can't be checked and captured in one turn.
-          </span>
-        </label>
       </section>
 
       <section className="faq" aria-labelledby="faq-title">
