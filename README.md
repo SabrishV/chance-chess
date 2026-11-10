@@ -15,7 +15,12 @@ Play the computer, pass & play on one device, or play a friend online with a sha
 Normal chess movement, plus:
 
 - **Draw a card before every turn.** Each player has their own 40-card deck, reshuffled when it runs out. The card counter shows what is left in both decks.
-- **Win by capturing the king.** There is no check or checkmate: you may leave your king attacked, and the game ends when a king is actually taken. (Castling still can't pass through attacked squares.)
+
+### Game modes
+
+- **Capture the king** (classic): there is no check or checkmate. You may leave your king attacked, and the game ends when a king is actually taken. (Castling still can't pass through attacked squares.)
+- **Checkmate:** real chess rules. No move, teleport or swap may leave your own king in check, and you win by checkmate. Checkmate is decided after the draw: when no normal move can save your king, you get a dramatic last-chance draw, and only a Teleport can rescue you. With no legal move and no check, your turn is simply skipped.
+- **Card hand:** like Checkmate (real chess rules, win by checkmate), but when you draw a Double Move, Wild or Teleport you can keep it (up to 3 cards) and make a normal move instead. On a later turn, play a kept card instead of the one you drew; a kept Teleport can rescue a king that would otherwise be mated. Both players can see each other's hand. Skip and Undo still hit you straight away.
 
 | Card | Count | Effect |
 | --- | --- | --- |
@@ -26,7 +31,10 @@ Normal chess movement, plus:
 | ★ · Wild | 5 | Swap one of your pawns for a piece you captured; it joins your side. Captured pawns can't be swapped in. Or make a normal move instead. |
 | ⌖ · Teleport | 3 | Move any of your pieces to any empty square (no captures; pawns can't land on the first or last rank). Or make a normal move instead. |
 
-**House rule (on by default, can be turned off on the home page):** giving check ends a Double Move. That way a king can't be checked and captured in one turn without a chance to respond.
+**House rules** (both on by default, each can be turned off on the home page):
+
+- **Check ends a Double Move.** Giving check ends your Double Move, so a king can't be checked and captured in one turn without a chance to respond.
+- **No curses in check.** Skip and Undo are never dealt while your king is in check: they're shuffled back into your deck and you draw again. Always on in Checkmate and Card hand modes.
 
 Draws: 200 turns in total, or only the kings left.
 

@@ -81,6 +81,8 @@ export interface LocalOptions {
 const AI_DRAW_DELAY_MS = 1000;
 /** After your Skip/Undo, wait for its reveal over the board to finish first. */
 const AI_DRAW_AFTER_REVEAL_MS = 2700;
+/** After its own checkmate last-chance draw, let the suspense reveal play out. */
+const AI_MOVE_AFTER_LAST_CHANCE_MS = 4000;
 const AI_FIRST_MOVE_DELAY_MS = 1900;
 const AI_NEXT_MOVE_DELAY_MS = 1200;
 
@@ -122,7 +124,9 @@ export function useLocalGame(opts: LocalOptions): GameController {
           ? AI_DRAW_AFTER_REVEAL_MS
           : AI_DRAW_DELAY_MS
         : state.movesMade === 0
-          ? AI_FIRST_MOVE_DELAY_MS
+          ? last?.lastChance
+            ? AI_MOVE_AFTER_LAST_CHANCE_MS
+            : AI_FIRST_MOVE_DELAY_MS
           : AI_NEXT_MOVE_DELAY_MS;
     let timer: number | undefined;
     setThinking(true);

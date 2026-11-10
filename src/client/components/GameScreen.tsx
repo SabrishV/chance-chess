@@ -4,12 +4,16 @@ import {
   type LegalActions,
   type PieceType,
   type Square,
+  CARDS,
   describeResult,
   findKing,
+  isLastChance,
   kingInDanger,
   legalActions,
   opposite,
+  winsByCheckmate,
 } from '../../engine';
+import { MODES } from '../content';
 import type { GameController } from '../controllers';
 import { loadValue, saveValue } from '../storage';
 import { Board, type TargetKind } from './Board';
@@ -20,7 +24,7 @@ import { COLOR_NAME } from './Piece';
 import { sound } from '../sound';
 import { useGameSounds } from '../useGameSounds';
 
-const NO_ACTIONS: LegalActions = { moves: [], drops: [], teleports: [], canEndTurn: false };
+const NO_ACTIONS: LegalActions = { moves: [], drops: [], teleports: [], canEndTurn: false, canKeep: false, playable: [] };
 
 const BOARD_THEMES = { green: 'Green', wood: 'Wood', candy: 'Candy' } as const;
 type BoardTheme = keyof typeof BOARD_THEMES;
@@ -75,34 +79,58 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
   const animKey = view && view.seq !== firstSeq.current ? view.seq : 0;
 
   // Every draw is dealt face up over the board; cards that end the turn on the
-  // spot (Skip, Undo) stay longer. Check gets a banner.
-  const seenLog = useRef<{ length: number; note?: string } | null>(null);
+  // spot (Skip, Undo) stay longer, and a checkmate last-chance draw gets the full
+  // suspense treatment. Check, and an opponent keeping or playing cards, get a banner.
+  const seenLog = useRef<{ length: number; note?: string; kept?: string; played?: string } | null>(null);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   useEffect(() => {
     if (!view) return;
     const last = view.log.at(-1);
     const prev = seenLog.current;
-    seenLog.current = { length: view.log.length, note: last?.note };
-    if (!prev || !last || (prev.length === view.log.length && prev.note === last.note)) return;
+    seenLog.current = { length: view.log.length, note: last?.note, kept: last?.kept, played: last?.played };
+    if (!prev || !last) return;
+    const showBanner = (text: string, tone: 'danger' | 'info') => {
+      setBanner({ id: Date.now(), text, tone });
+      timers.current.push(window.setTimeout(() => setBanner(null), 1700));
+    };
 
-    const newDraw = view.log.length > prev.length;
-    if (newDraw) {
-      const mine = myColors.includes(last.color);
-      const you = mine && myColors.length === 1;
+    const mine = myColors.includes(last.color);
+    const you = mine && myColors.length === 1;
+    if (view.log.length > prev.length) {
       const endsTurn = last.card === 'skip' || last.card === 'undo' || last.note === 'No legal moves.';
+      const heldBack = last.heldBack?.length
+        ? `${last.heldBack.map((c) => CARDS[c].name).join(' and ')} shuffled back: king in check`
+        : undefined;
+      if (last.lastChance) {
+        const duration = 3800;
+        setReveal({
+          id: Date.now(),
+          card: last.card,
+          caption: you ? 'Last chance…' : `${names[last.color]}'s last chance…`,
+          note: last.note,
+          duration,
+          lastChance: { saved: !view.result },
+        });
+        timers.current.push(window.setTimeout(() => setReveal(null), duration));
+        return;
+      }
       const duration = endsTurn ? 2600 : mine ? 1300 : 1700;
       setReveal({
         id: Date.now(),
         card: last.card,
         caption: you ? 'You drew' : `${names[last.color]} drew`,
-        note: last.note,
+        note: last.note ?? heldBack,
         duration,
       });
       timers.current.push(window.setTimeout(() => setReveal(null), duration));
-    } else if (last.note?.startsWith('Check')) {
-      setBanner({ id: Date.now(), text: 'Check! Double move ends', tone: 'danger' });
-      timers.current.push(window.setTimeout(() => setBanner(null), 1700));
+      return;
+    }
+    if (last.note !== prev.note && last.note?.startsWith('Check')) showBanner('Check! Double move ends', 'danger');
+    if (!mine && last.played && last.played !== prev.played) {
+      showBanner(`${names[last.color]} played a kept ${CARDS[last.played].name}!`, 'info');
+    } else if (!mine && last.kept && last.kept !== prev.kept) {
+      showBanner(`${names[last.color]} kept ${CARDS[last.kept].name}`, 'info');
     }
   }, [view, myColors, names.w, names.b]);
 
@@ -212,10 +240,21 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
 
   const me = myColors.length === 1 ? myColors[0] : null;
   const turnName = names[view.pos.turn];
+  // Rooms from an older game server have no mode: treat them as the classic one.
+  const gameMode = view.rules.mode ?? 'capture';
+  const checkmateMode = winsByCheckmate({ ...view.rules, mode: gameMode });
+  const lastChance = canAct && isLastChance(view);
+  // Skip and Undo are held back while in check, so only the rest of the deck counts.
+  const deck = view.deckCounts[view.pos.turn];
+  const usable = Object.values(deck).reduce((a, b) => a + b, 0) - deck.skip - deck.undo;
+  const odds = usable > 0 ? { teleports: deck.teleport, of: usable } : { teleports: 3, of: 33 };
   const myKingInDanger = !view.result && myColors.some((c) => c === view.pos.turn && kingInDanger(view.pos, c));
 
+  // Don't give away a checkmate before the last-chance card has flipped.
+  const suspense = !!reveal?.lastChance;
   let status: string;
-  if (view.result) status = 'Game over';
+  if (suspense) status = 'Last chance…';
+  else if (view.result) status = 'Game over';
   else if (!seatsFilled) status = 'Waiting for opponent';
   else if (myTurn) status = myColors.length === 2 ? `${turnName}'s turn` : 'Your turn';
   else status = `${turnName}'s turn`;
@@ -248,6 +287,9 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
             Chance <b>Chess</b>
           </span>
         </button>
+        <span className="mode-chip" title={MODES[gameMode].blurb}>
+          {MODES[gameMode].label}
+        </span>
         {roomCode && (
           <button className="room-chip" type="button" onClick={copyLink} title="Copy invite link">
             Room <b>{roomCode}</b> <span>{copied ? '✓ Copied' : 'Copy link'}</span>
@@ -317,11 +359,22 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
               onSquareClick={onSquareClick}
             />
             {canAct && view.phase === 'draw' && !reveal && (
-              <button className="draw-overlay" type="button" onClick={() => game.send({ kind: 'draw' })} aria-label="Draw a card">
+              <button
+                className={`draw-overlay ${lastChance ? 'last-chance' : ''}`}
+                type="button"
+                onClick={() => game.send({ kind: 'draw' })}
+                aria-label={lastChance ? 'Last chance: draw a card' : 'Draw a card'}
+              >
+                {lastChance && <span className="last-chance-title">Checkmate… unless</span>}
                 <span className="draw-deck">
                   <Deck count={Object.values(view.deckCounts[view.pos.turn]).reduce((a, b) => a + b, 0)} size="lg" />
                 </span>
-                <span className="draw-cta">Tap to draw</span>
+                <span className="draw-cta">{lastChance ? 'Last chance: draw!' : 'Tap to draw'}</span>
+                {lastChance && (
+                  <span className="last-chance-odds">
+                    Only a Teleport can save your king · {odds.teleports} of {odds.of} cards
+                  </span>
+                )}
               </button>
             )}
             {promotion && (
@@ -329,7 +382,7 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
             )}
             {reveal && <CardReveal reveal={reveal} />}
             {banner && <Banner {...banner} />}
-            {view.result && !resultDismissed && (
+            {view.result && !resultDismissed && !reveal && (
               <GameOverModal
                 outcome={outcome}
                 detail={describeResult(view.result, names)}
@@ -356,7 +409,7 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
         <aside className="side-area">
           <div className={`status-pill ${canAct ? 'mine' : ''} ${view.result ? 'over' : ''}`} role="status">
             {status}
-            {myKingInDanger && <span className="danger-tag">⚠ King in danger!</span>}
+            {myKingInDanger && <span className="danger-tag">{checkmateMode ? '⚠ Check!' : '⚠ King in danger!'}</span>}
           </div>
           {game.error && (
             <div className="error-toast" key={game.error}>
@@ -372,6 +425,11 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
               <button className="btn btn-primary" type="button" onClick={copyLink}>
                 {copied ? '✓ Copied!' : 'Copy invite link'}
               </button>
+            </div>
+          ) : suspense ? (
+            <div className="panel result-panel">
+              <div className="zone-title">Last chance…</div>
+              <p className="zone-hint">Everything rides on this card.</p>
             </div>
           ) : view.result ? (
             <div className="panel result-panel">
@@ -398,6 +456,8 @@ export function GameScreen({ game, roomCode, onLeave }: GameScreenProps) {
               dropPiece={dropPiece}
               onDraw={() => game.send({ kind: 'draw' })}
               onEndTurn={() => game.send({ kind: 'endTurn' })}
+              onKeep={() => game.send({ kind: 'keep' })}
+              onPlayKept={(card) => game.send({ kind: 'playKept', card })}
               onPickDrop={(p) => {
                 setSelected(null);
                 if (p) sound.play('select');
