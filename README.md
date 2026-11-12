@@ -5,7 +5,7 @@ Play the computer, pass & play on one device, or play a friend online with a sha
 
 **Play free at [chance-chess-sab.vercel.app](https://chance-chess-sab.vercel.app/)**
 
-[![Watch the Chance Chess trailer](images/trailer.webp)](videos/chance-chess-trailer.mp4)
+https://github.com/user-attachments/assets/e37b50b9-7b7f-41fb-9585-541b8ed6c9a0
 
 ## Rules
 
